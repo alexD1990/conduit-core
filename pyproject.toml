@@ -12,7 +12,8 @@ dependencies = [
     "pyyaml (>=6.0.3,<7.0.0)",
     "pydantic (>=2.11.9,<3.0.0)",
     "pyodbc (>=5.2.0,<6.0.0)",
-    "python-dotenv (>=1.1.1,<2.0.0)"
+    "python-dotenv (>=1.1.1,<2.0.0)",
+    "databricks-sdk (>=0.67.0,<0.68.0)"
 ]
 
 [tool.poetry]

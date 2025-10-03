@@ -3,11 +3,12 @@ sources:
     type: azuresql
 
 destinations:
-  - name: print_to_terminal
-    type: dummy_destination
+  - name: databricks_landing
+    type: databricks
+    path: "main.default.conduit_users" # Tabellen som vil bli opprettet
 
 resources:
   - name: get_real_users
     source: my_azure_db
-    destination: print_to_terminal
+    destination: databricks_landing
     query: "SELECT UserID, Username, Email FROM dbo.Users;"
