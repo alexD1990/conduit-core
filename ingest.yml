@@ -1,13 +1,13 @@
 sources:
-  - name: my_dummy_source
-    type: dummy_source
+  - name: my_azure_db
+    type: azuresql
 
 destinations:
-  - name: my_dummy_destination
+  - name: print_to_terminal
     type: dummy_destination
 
 resources:
-  - name: get_dummy_data
-    source: my_dummy_source
-    destination: my_dummy_destination
-    query: "SELECT * FROM users;" # Spiller ingen rolle for dummy-testen
+  - name: get_real_users
+    source: my_azure_db
+    destination: print_to_terminal
+    query: "SELECT UserID, Username, Email FROM dbo.Users;"
