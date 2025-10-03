@@ -3,11 +3,13 @@ sources:
     type: azuresql
 
 destinations:
-  - name: print_to_terminal
-    type: dummy_destination
+  - name: local_csv_output
+    type: csv
+    path: "./output/azure_users.csv" # Filen som vil bli opprettet
 
 resources:
   - name: get_real_users
     source: my_azure_db
-    destination: print_to_terminal
-    query: "SELECT UserID, Username, Email FROM dbo.Users;"
+    destination: local_csv_output
+    incremental_column: "UserID"
+    query: "SELECT UserID, Username, Email FROM dbo.Users WHERE UserID > :last_value;"

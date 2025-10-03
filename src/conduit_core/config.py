@@ -23,6 +23,7 @@ class Resource(BaseModel):
     source: str
     destination: str
     query: str
+    incremental_column: Optional[str] = None
 
 class IngestConfig(BaseModel):
     sources: List[Source]
