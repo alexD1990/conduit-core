@@ -1,0 +1,13 @@
+sources:
+  - name: my_dummy_source
+    type: dummy_source
+
+destinations:
+  - name: my_dummy_destination
+    type: dummy_destination
+
+resources:
+  - name: get_dummy_data
+    source: my_dummy_source
+    destination: my_dummy_destination
+    query: "SELECT * FROM users;" # Spiller ingen rolle for dummy-testen
