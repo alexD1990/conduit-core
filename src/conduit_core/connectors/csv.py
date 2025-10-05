@@ -1,6 +1,7 @@
 # src/conduit_core/connectors/csv.py
 
 import csv
+import logging
 import os
 from typing import Iterable, Dict, Any
 
@@ -30,14 +31,14 @@ class CsvDestination(BaseDestination):
 
         headers = records[0].keys()
 
-        print(f"Skriver {len(records)} rader til CSV-fil: {self.filepath}")
+        logging.info(f"Skriver {len(records)} rader til CSV-fil: {self.filepath}")
 
         with open(self.filepath, 'w', newline='', encoding='utf-8') as output_file:
             writer = csv.DictWriter(output_file, fieldnames=headers)
             writer.writeheader()
             writer.writerows(records)
 
-        print(f"✅ Vellykket skriving til {self.filepath}")
+        logging.info(f"✅ Vellykket skriving til {self.filepath}")
 
 
 class CsvSource(BaseSource):
@@ -60,4 +61,4 @@ class CsvSource(BaseSource):
             for row in reader:
                 yield row
 
-        print(f"✅ Ferdig med å lese fra {self.filepath}")
+        logging.info(f"✅ Ferdig med å lese fra {self.filepath}")

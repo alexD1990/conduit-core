@@ -1,5 +1,6 @@
 # src/conduit_core/engine.py
 
+import logging
 from rich import print
 from .config import IngestConfig, Resource
 from .state import load_state, save_state
@@ -26,11 +27,11 @@ DESTINATION_CONNECTOR_MAP = {
 
 def run_resource(resource: Resource, config: IngestConfig):
     """Kjører en enkelt dataflyt-ressurs med state management."""
-    print(f"--- 🚀 Kjører ressurs: [bold blue]{resource.name}[/bold blue] ---")
+    logging.info((f"--- 🚀 Kjører ressurs: [bold blue]{resource.name}[/bold blue] ---"))
 
     current_state = load_state()
     last_value = current_state.get(resource.name, 0)
-    print(f"Siste kjente verdi for '{resource.name}': {last_value}")
+    logging.info(f"Siste kjente verdi for '{resource.name}': {last_value}")
 
     final_query = resource.query.replace(":last_value", str(last_value))
     
@@ -51,7 +52,7 @@ def run_resource(resource: Resource, config: IngestConfig):
     records = list(source.read(final_query))
     
     if not records:
-        print("Ingen nye rader funnet.")
+        logging.info("Ingen nye rader funnet.")
         destination.write([])
     else:
         destination.write(records)
@@ -61,6 +62,6 @@ def run_resource(resource: Resource, config: IngestConfig):
             new_max_value = max(int(r[resource.incremental_column]) for r in records)
             current_state[resource.name] = new_max_value
             save_state(current_state)
-            print(f"Ny state lagret for '{resource.name}': {new_max_value}")
+            logging.info(f"Ny state lagret for '{resource.name}': {new_max_value}")
 
-    print(f"--- ✅ Ferdig med ressurs: [bold blue]{resource.name}[/bold blue] ---\n")
+    logging.info(f"--- ✅ Ferdig med ressurs: [bold blue]{resource.name}[/bold blue] ---\n")
