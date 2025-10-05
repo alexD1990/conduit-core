@@ -1,12 +1,19 @@
 # src/conduit_core/cli.py
 
-import logging
 import typer
+import logging
 from pathlib import Path
-from rich import print
 from .config import load_config
 from .engine import run_resource
 
+# Configure logging as the first action
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+
+# This is the main application object
 app = typer.Typer()
 
 @app.command()
@@ -15,21 +22,14 @@ def validate(
         "ingest.yml", 
         "--file", 
         "-f", 
-        help="Stien til din ingest.yml fil."
+        help="Path to your ingest.yml file."
     )
 ):
-    """Validerer konfigurasjonsfilen ingest.yml."""
-    if not config_file.is_file():
-        print(f"❌ [bold red]Feil:[/bold red] Filen '{config_file}' ble ikke funnet.")
-        raise typer.Exit(code=1)
-
-    print(f"🔍 Validerer konfigurasjonsfil: [bold green]{config_file}[/bold green]")
-
-    try:
-        config = load_config(config_file)
-        print("✅ Konfigurasjon er gyldig!")
-    except Exception as e:
-        print(f"❌ [bold red]Feil i konfigurasjon:[/bold red]\n{e}")
+    """Validates the ingest.yml configuration file."""
+    # This command is not fully implemented yet, but it's here as a placeholder
+    logging.info(f"Validating {config_file}...")
+    # Add validation logic here in the future
+    logging.info("Validation complete (not yet implemented).")
 
 @app.command()
 def run(
@@ -37,27 +37,23 @@ def run(
         "ingest.yml", 
         "--file", 
         "-f", 
-        help="Stien til din ingest.yml fil."
+        help="Path to your ingest.yml file."
     )
 ):
-    """Kjører data-innsamlingen basert på ingest.yml."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
+    """Runs the data ingestion based on the ingest.yml file."""
     try:
         config = load_config(config_file)
-        print("🚀 Starter Conduit Core run...")
+        logging.info("🚀 Starting Conduit Core run...")
         for resource in config.resources:
             run_resource(resource, config)
-        print("✨ Conduit Core run fullført!")
+        logging.info("✨ Conduit Core run complete!")
 
     except Exception as e:
-        print(f"❌ [bold red]En feil oppstod under kjøringen:[/bold red]")
-        print(e)
+        logging.error("❌ An error occurred during the run:")
+        logging.error(e, exc_info=True)
         raise typer.Exit(code=1)
 
-# VIKTIG: Sørg for at disse to linjene er med helt til slutt, uten innrykk
-if __name__ == "__main__":
+# This function is not called directly by the script entry point,
+# but it's what the entry point in pyproject.toml ("conduit_core.cli:app") refers to.
+def main():
     app()

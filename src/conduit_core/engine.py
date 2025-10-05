@@ -1,33 +1,48 @@
 # src/conduit_core/engine.py
 
 import logging
-from rich import print
+import pkgutil
+import inspect
+from pathlib import Path
+from . import connectors # Importerer hele connectors-pakken
 from .config import IngestConfig, Resource
 from .state import load_state, save_state
+from .connectors.base import BaseSource, BaseDestination
 
-# Import all the connectors
-from .connectors.dummy import DummySource, DummyDestination
-from .connectors.azuresql import AzureSqlSource, AzureSqlDestination
-# from .connectors.databricks import DatabricksDestination # Paused
-from .connectors.csv import CsvSource, CsvDestination
+# --- Automatisk "Plugin Discovery" ---
 
-# --- Connector Maps ---
-SOURCE_CONNECTOR_MAP = {
-    "dummy_source": DummySource,
-    "azuresql": AzureSqlSource,
-    "csv": CsvSource,
-}
+def discover_connectors():
+    """Finner og laster alle konnektor-klasser fra connectors-mappen."""
+    source_map = {}
+    destination_map = {}
+    
+    # Går gjennom alle filene i 'connectors'-mappen
+    for _, module_name, _ in pkgutil.iter_modules(connectors.__path__, f"{connectors.__name__}."):
+        module = __import__(module_name, fromlist=["*"])
+        
+        # Går gjennom alle klasser i hver fil
+        for name, obj in inspect.getmembers(module, inspect.isclass):
+            # Sjekker om klassen er en Source, men ikke BaseSource selv
+            if issubclass(obj, BaseSource) and obj is not BaseSource:
+                if obj.connector_type: # Sjekker at den har et "navneskilt"
+                    source_map[obj.connector_type] = obj
+            
+            # Sjekker om klassen er en Destination, men ikke BaseDestination selv
+            if issubclass(obj, BaseDestination) and obj is not BaseDestination:
+                if obj.connector_type: # Sjekker at den har et "navneskilt"
+                    destination_map[obj.connector_type] = obj
+                    
+    return source_map, destination_map
 
-DESTINATION_CONNECTOR_MAP = {
-    "dummy_destination": DummyDestination,
-    "csv": CsvDestination,
-    "azuresql": AzureSqlDestination, # Ny destinasjon lagt til
-    # "databricks": DatabricksDestination, # Paused
-}
+# Kjører discovery-funksjonen én gang og logger resultatet
+SOURCE_CONNECTOR_MAP, DESTINATION_CONNECTOR_MAP = discover_connectors()
+logging.info(f"Lastet inn {len(SOURCE_CONNECTOR_MAP)} kilder og {len(DESTINATION_CONNECTOR_MAP)} destinasjoner.")
+
+# --- Kjøremotoren (resten av filen er uendret) ---
 
 def run_resource(resource: Resource, config: IngestConfig):
-    """Kjører en enkelt dataflyt-ressurs med state management."""
-    logging.info((f"--- 🚀 Kjører ressurs: [bold blue]{resource.name}[/bold blue] ---"))
+    """Kjører en enkelt dataflyt-ressurs."""
+    logging.info(f"--- 🚀 Kjører ressurs: {resource.name} ---")
 
     current_state = load_state()
     last_value = current_state.get(resource.name, 0)
@@ -58,10 +73,9 @@ def run_resource(resource: Resource, config: IngestConfig):
         destination.write(records)
         
         if resource.incremental_column and resource.incremental_column in records[0]:
-            # This needs to handle non-integer types for timestamps in the future
             new_max_value = max(int(r[resource.incremental_column]) for r in records)
             current_state[resource.name] = new_max_value
             save_state(current_state)
             logging.info(f"Ny state lagret for '{resource.name}': {new_max_value}")
 
-    logging.info(f"--- ✅ Ferdig med ressurs: [bold blue]{resource.name}[/bold blue] ---\n")
+    logging.info(f"--- ✅ Ferdig med ressurs: {resource.name} ---\n")
