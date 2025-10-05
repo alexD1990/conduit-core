@@ -1,15 +1,15 @@
 sources:
-  - name: my_azure_db
-    type: azuresql
+  - name: local_csv_source
+    type: csv
+    path: "./data/input_users.csv"
 
 destinations:
-  - name: local_csv_output
-    type: csv
-    path: "./output/azure_users.csv" # Filen som vil bli opprettet
+  - name: print_to_terminal
+    type: dummy_destination
 
 resources:
-  - name: get_real_users
-    source: my_azure_db
-    destination: local_csv_output
-    incremental_column: "UserID"
-    query: "SELECT UserID, Username, Email FROM dbo.Users WHERE UserID > :last_value;"
+  - name: csv_to_terminal
+    source: local_csv_source
+    destination: print_to_terminal
+    # query-feltet ignoreres av CsvSource, men må være der
+    query: "n/a"
