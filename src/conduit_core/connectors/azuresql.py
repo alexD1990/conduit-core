@@ -5,7 +5,7 @@ import pyodbc
 from typing import Iterable, Dict, Any
 from dotenv import load_dotenv
 from ..config import Source
-from .base import BaseSource
+from .base import BaseSource, BaseDestination
 
 class AzureSqlSource(BaseSource):
     """Henter data fra en Azure SQL Database."""
@@ -51,3 +51,61 @@ class AzureSqlSource(BaseSource):
 
         except pyodbc.Error as e:
             raise ConnectionError(f"Klarte ikke koble til eller hente data fra Azure SQL. Sjekk tilkoblingsdetaljer og nettverk. Original feil: {e}")
+        
+
+from ..config import Destination as DestinationConfig
+
+class AzureSqlDestination(BaseDestination):
+    """Skriver data til en tabell i Azure SQL Database."""
+
+    def __init__(self, config: DestinationConfig):
+        load_dotenv()
+        server = os.getenv("DB_SERVER")
+        database = os.getenv("DB_DATABASE")
+        username = os.getenv("DB_USER")
+        password = os.getenv("DB_PASSWORD")
+
+        if not all([server, database, username, password]):
+            raise ValueError("Database-hemmeligheter er ikke satt i .env-filen.")
+
+        if not config.path:
+            raise ValueError("En 'path' (tabellnavn) må være definert for AzureSqlDestination.")
+
+        self.table_name = config.path
+        self.connection_string = (
+            f"DRIVER={{ODBC Driver 18 for SQL Server}};"
+            f"SERVER={server};"
+            f"DATABASE={database};"
+            f"UID={username};"
+            f"PWD={password}"
+        )
+
+    def write(self, records: Iterable[Dict[str, Any]]):
+        records = list(records)
+        if not records:
+            print("Ingen rader å skrive til Azure SQL.")
+            return
+
+        cnxn = pyodbc.connect(self.connection_string, timeout=60)
+        cursor = cnxn.cursor()
+
+        # Forbered INSERT-setningen dynamisk
+        headers = records[0].keys()
+        columns = ', '.join(f'[{h}]' for h in headers)
+        placeholders = ', '.join(['?'] * len(headers))
+
+        sql = f"INSERT INTO {self.table_name} ({columns}) VALUES ({placeholders})"
+
+        # Konverter dataene til en liste av tupler
+        data_to_insert = [tuple(r.values()) for r in records]
+
+        print(f"Skriver {len(data_to_insert)} rader til tabell: {self.table_name}")
+
+        # Bruk executemany for effektiv bulkskriving
+        cursor.executemany(sql, data_to_insert)
+
+        cnxn.commit()
+        cursor.close()
+        cnxn.close()
+
+        print(f"✅ Vellykket skriving til {self.table_name}")
