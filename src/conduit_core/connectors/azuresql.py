@@ -33,17 +33,21 @@ class AzureSqlSource(BaseSource):
 
     def read(self, query: str) -> Iterable[Dict[str, Any]]:
         """Kjører en spørring mot databasen og yielder rader."""
-        print(f"Kobler til Azure SQL Database...")
-        cnxn = pyodbc.connect(self.connection_string)
-        cursor = cnxn.cursor()
+        try:
+            print(f"Kobler til Azure SQL Database...")
+            cnxn = pyodbc.connect(self.connection_string, timeout=60)
+            cursor = cnxn.cursor()
 
-        print(f"Kjører spørring: {query}")
-        cursor.execute(query)
+            print(f"Kjører spørring: {query}")
+            cursor.execute(query)
 
-        columns = [column[0] for column in cursor.description]
+            columns = [column[0] for column in cursor.description]
 
-        for row in cursor.fetchall():
-            yield dict(zip(columns, row))
+            for row in cursor.fetchall():
+                yield dict(zip(columns, row))
 
-        cnxn.close()
-        print("Tilkobling til Azure SQL lukket.")
+            cnxn.close()
+            print("Tilkobling til Azure SQL lukket.")
+
+        except pyodbc.Error as e:
+            raise ConnectionError(f"Klarte ikke koble til eller hente data fra Azure SQL. Sjekk tilkoblingsdetaljer og nettverk. Original feil: {e}")

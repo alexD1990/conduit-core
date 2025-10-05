@@ -3,8 +3,6 @@
 import typer
 from pathlib import Path
 from rich import print
-
-# Riktige importer med punktum foran
 from .config import load_config
 from .engine import run_resource
 
@@ -25,7 +23,7 @@ def validate(
         raise typer.Exit(code=1)
 
     print(f"🔍 Validerer konfigurasjonsfil: [bold green]{config_file}[/bold green]")
-    
+
     try:
         config = load_config(config_file)
         print("✅ Konfigurasjon er gyldig!")
@@ -42,11 +40,18 @@ def run(
     )
 ):
     """Kjører data-innsamlingen basert på ingest.yml."""
-    config = load_config(config_file)
-    print("🚀 Starter Conduit Core run...")
-    for resource in config.resources:
-        run_resource(resource, config)
-    print("✨ Conduit Core run fullført!")
+    try:
+        config = load_config(config_file)
+        print("🚀 Starter Conduit Core run...")
+        for resource in config.resources:
+            run_resource(resource, config)
+        print("✨ Conduit Core run fullført!")
 
+    except Exception as e:
+        print(f"❌ [bold red]En feil oppstod under kjøringen:[/bold red]")
+        print(e)
+        raise typer.Exit(code=1)
+
+# VIKTIG: Sørg for at disse to linjene er med helt til slutt, uten innrykk
 if __name__ == "__main__":
     app()
