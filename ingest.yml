@@ -4,12 +4,12 @@ sources:
     path: "./data/input_users.csv"
 
 destinations:
-  - name: print_to_terminal
-    type: dummy_destination
+  - name: my_azure_db_dest
+    type: azuresql
+    path: "dbo.ImportedUsers" # Tabellen vi nettopp laget
 
 resources:
-  - name: csv_to_terminal
+  - name: csv_to_azure
     source: local_csv_source
-    destination: print_to_terminal
-    # query-feltet ignoreres av CsvSource, men må være der
+    destination: my_azure_db_dest
     query: "n/a"
