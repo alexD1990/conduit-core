@@ -1,6 +1,7 @@
 # src/conduit_core/connectors/azuresql.py
 
 import os
+import logging
 import pyodbc
 from typing import Iterable, Dict, Any
 from dotenv import load_dotenv
@@ -34,11 +35,11 @@ class AzureSqlSource(BaseSource):
     def read(self, query: str) -> Iterable[Dict[str, Any]]:
         """Kjører en spørring mot databasen og yielder rader."""
         try:
-            print(f"Kobler til Azure SQL Database...")
+            logging.info(f"Kobler til Azure SQL Database...")
             cnxn = pyodbc.connect(self.connection_string, timeout=60)
             cursor = cnxn.cursor()
 
-            print(f"Kjører spørring: {query}")
+            logging.info(f"Kjører spørring: {query}")
             cursor.execute(query)
 
             columns = [column[0] for column in cursor.description]
@@ -47,7 +48,7 @@ class AzureSqlSource(BaseSource):
                 yield dict(zip(columns, row))
 
             cnxn.close()
-            print("Tilkobling til Azure SQL lukket.")
+            logging.info("Tilkobling til Azure SQL lukket.")
 
         except pyodbc.Error as e:
             raise ConnectionError(f"Klarte ikke koble til eller hente data fra Azure SQL. Sjekk tilkoblingsdetaljer og nettverk. Original feil: {e}")
@@ -99,7 +100,7 @@ class AzureSqlDestination(BaseDestination):
         # Konverter dataene til en liste av tupler
         data_to_insert = [tuple(r.values()) for r in records]
 
-        print(f"Skriver {len(data_to_insert)} rader til tabell: {self.table_name}")
+        logging.info(f"Skriver {len(data_to_insert)} rader til tabell: {self.table_name}")
 
         # Bruk executemany for effektiv bulkskriving
         cursor.executemany(sql, data_to_insert)
@@ -108,4 +109,4 @@ class AzureSqlDestination(BaseDestination):
         cursor.close()
         cnxn.close()
 
-        print(f"✅ Vellykket skriving til {self.table_name}")
+        logging.info(f"✅ Vellykket skriving til {self.table_name}")

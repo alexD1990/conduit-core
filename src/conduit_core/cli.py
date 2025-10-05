@@ -1,5 +1,6 @@
 # src/conduit_core/cli.py
 
+import logging
 import typer
 from pathlib import Path
 from rich import print
@@ -40,6 +41,11 @@ def run(
     )
 ):
     """Kjører data-innsamlingen basert på ingest.yml."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
     try:
         config = load_config(config_file)
         print("🚀 Starter Conduit Core run...")
