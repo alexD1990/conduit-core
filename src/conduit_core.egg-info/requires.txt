@@ -1,0 +1,10 @@
+typer[all]>=0.19.2
+pyyaml>=6.0.3
+pydantic>=2.11.9
+pyodbc>=5.2.0
+python-dotenv>=1.1.1
+pandas>=2.0.0
+pyarrow>=14.0.0
+
+[dev]
+pytest>=8.4.2
