@@ -6,6 +6,7 @@ import pandas as pd
 from typing import Iterable, Dict, Any
 from .base import BaseSource, BaseDestination
 from ..config import Source, Destination
+from ..validators import RecordValidator
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,15 @@ class ParquetDestination(BaseDestination):
 
         logger.info(f"Writing {len(records)} rows to Parquet file: {self.filepath}")
 
-        df = pd.DataFrame(records)
+        # Validate and sanitize records
+        validator = RecordValidator(skip_invalid=True)
+        cleaned_records = []
+        for i, record in enumerate(records, start=1):
+            validated = validator.validate_record(record, i)
+            if validated:
+                cleaned_records.append(validated)
+
+        df = pd.DataFrame(cleaned_records)
         df.to_parquet(self.filepath, index=False)
 
         logger.info(f"✅ Successfully wrote to {self.filepath}")

@@ -6,6 +6,7 @@ import os
 from typing import Iterable, Dict, Any
 from .base import BaseSource, BaseDestination
 from ..config import Source, Destination
+from ..validators import RecordValidator
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +74,16 @@ class JsonDestination(BaseDestination):
 
         logger.info(f"Writing {len(records)} rows to JSON file: {self.filepath}")
 
+        # Validate and sanitize records
+        validator = RecordValidator(skip_invalid=True)
+        cleaned_records = []
+        for i, record in enumerate(records, start=1):
+            validated = validator.validate_record(record, i)
+            if validated:
+                cleaned_records.append(validated)
+
         with open(self.filepath, 'w', encoding='utf-8') as output_file:
-            json.dump(records, output_file, indent=2, ensure_ascii=False)
+            json.dump(cleaned_records, output_file, indent=2, ensure_ascii=False, default=str)
 
         logger.info(f"✅ Successfully wrote to {self.filepath}")
     
