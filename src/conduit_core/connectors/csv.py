@@ -1,5 +1,6 @@
 # src/conduit_core/connectors/csv.py
 
+from ..schema import CsvDelimiterDetector
 import csv
 import logging
 import os
@@ -61,7 +62,7 @@ class CsvDestination(BaseDestination):
 
 
 class CsvSource(BaseSource):
-    """Leser data fra en lokal CSV-fil med encoding detection."""
+    """Leser data fra en lokal CSV-fil med auto-detection."""
 
     def __init__(self, config: SourceConfig):
         if not config.path:
@@ -69,16 +70,18 @@ class CsvSource(BaseSource):
         self.filepath = config.path
         # Auto-detect encoding
         self.encoding = EncodingDetector.detect_encoding(self.filepath)
+        # Auto-detect delimiter
+        self.delimiter = CsvDelimiterDetector.detect_delimiter(self.filepath)
 
     def read(self, query: str = None) -> Iterable[Dict[str, Any]]:
         """Leser alle rader fra CSV-filen og yielder dem som dictionaries."""
-        logging.info(f"Leser fra CSV-fil: {self.filepath} (encoding: {self.encoding})")
+        logging.info(f"Leser fra CSV-fil: {self.filepath} (encoding: {self.encoding}, delimiter: '{self.delimiter}')")
 
         if not os.path.exists(self.filepath):
             raise FileNotFoundError(f"Finner ikke CSV-filen: {self.filepath}")
 
         with open(self.filepath, mode='r', encoding=self.encoding, errors='replace') as infile:
-            reader = csv.DictReader(infile)
+            reader = csv.DictReader(infile, delimiter=self.delimiter)
             for row in reader:
                 yield row
 
