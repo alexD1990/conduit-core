@@ -19,6 +19,24 @@ class CsvDestination(BaseDestination):
             raise ValueError("En 'path' (filsti) må være definert for CsvDestination.")
         self.filepath = config.path
 
+    def test_connection(self) -> bool:
+        """Test at output-mappen eksisterer eller kan opprettes"""
+        output_dir = os.path.dirname(self.filepath)
+        if output_dir and not os.path.exists(output_dir):
+            try:
+                os.makedirs(output_dir, exist_ok=True)
+            except Exception as e:
+                from ..errors import ConnectionError as ConduitConnectionError
+                raise ConduitConnectionError(
+                    f"Kan ikke opprette output-mappe: {output_dir}",
+                    suggestions=[
+                        "Sjekk at du har skrivetilgang til mappen",
+                        f"Feil: {e}"
+                    ]
+                )
+        logging.info(f"✅ CSV destination tilkoblingstest vellykket: {self.filepath}")
+        return True
+
     def write(self, records: Iterable[Dict[str, Any]]):
         records = list(records)
         if not records:
@@ -48,6 +66,21 @@ class CsvSource(BaseSource):
         if not config.path:
             raise ValueError("En 'path' (filsti) må være definert for CsvSource.")
         self.filepath = config.path
+
+    def test_connection(self) -> bool:
+        """Test at CSV-filen eksisterer og kan leses"""
+        if not os.path.exists(self.filepath):
+            from ..errors import ConnectionError as ConduitConnectionError
+            raise ConduitConnectionError(
+                f"CSV-fil ikke funnet: {self.filepath}",
+                suggestions=[
+                    "Sjekk at filstien er riktig",
+                    "Sjekk at filen eksisterer",
+                    f"Søkte etter: {os.path.abspath(self.filepath)}"
+                ]
+            )
+        logging.info(f"✅ CSV source tilkoblingstest vellykket: {self.filepath}")
+        return True
 
     def read(self, query: str = None) -> Iterable[Dict[str, Any]]:
         """Leser alle rader fra CSV-filen og yielder dem som dictionaries."""

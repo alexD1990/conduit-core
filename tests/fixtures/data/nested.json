@@ -1,0 +1,16 @@
+[
+  {
+    "id": 1,
+    "user": {
+      "name": "Alice",
+      "email": "alice@example.com"
+    },
+    "metadata": {
+      "created_at": "2025-01-01",
+      "tags": [
+        "admin",
+        "active"
+      ]
+    }
+  }
+]

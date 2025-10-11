@@ -7,6 +7,8 @@ from typing import Iterable, Dict, Any
 from dotenv import load_dotenv
 from ..config import Source
 from .base import BaseSource, BaseDestination
+from ..utils.retry import retry_on_db_error
+from ..errors import ConnectionError as ConduitConnectionError
 
 class AzureSqlSource(BaseSource):
     """Henter data fra en Azure SQL Database."""
@@ -32,6 +34,7 @@ class AzureSqlSource(BaseSource):
         # Vi lagrer configen for senere bruk (f.eks. for query)
         self.config = config
 
+    @retry_on_db_error
     def read(self, query: str) -> Iterable[Dict[str, Any]]:
         """Kjører en spørring mot databasen og yielder rader."""
         try:
@@ -44,14 +47,45 @@ class AzureSqlSource(BaseSource):
 
             columns = [column[0] for column in cursor.description]
 
+            row_count = 0
             for row in cursor.fetchall():
+                row_count += 1
                 yield dict(zip(columns, row))
 
             cnxn.close()
-            logging.info("Tilkobling til Azure SQL lukket.")
+            logging.info(f"✅ Vellykket lesing av {row_count} rader fra Azure SQL")
 
         except pyodbc.Error as e:
-            raise ConnectionError(f"Klarte ikke koble til eller hente data fra Azure SQL. Sjekk tilkoblingsdetaljer og nettverk. Original feil: {e}")
+            raise ConduitConnectionError(
+                f"Klarte ikke koble til eller hente data fra Azure SQL.",
+                suggestions=[
+                    "Sjekk at DB_SERVER, DB_DATABASE, DB_USER, DB_PASSWORD er satt i .env",
+                    "Verifiser nettverkstilkobling til Azure SQL",
+                    "Sjekk om brannmur tillater din IP-adresse",
+                    f"Original feil: {e}"
+                ]
+            )
+    
+    def test_connection(self) -> bool:
+        """Test tilkobling til Azure SQL Database"""
+        try:
+            logging.info("Tester Azure SQL tilkobling...")
+            cnxn = pyodbc.connect(self.connection_string, timeout=10)
+            cursor = cnxn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+            cnxn.close()
+            logging.info("✅ Azure SQL tilkoblingstest vellykket")
+            return True
+        except pyodbc.Error as e:
+            raise ConduitConnectionError(
+                f"Azure SQL tilkoblingstest feilet",
+                suggestions=[
+                    "Sjekk at .env-filen har riktige credentials",
+                    "Verifiser nettverkstilkobling",
+                    f"Feildetaljer: {e}"
+                ]
+            )
         
 
 from ..config import Destination as DestinationConfig
@@ -80,6 +114,30 @@ class AzureSqlDestination(BaseDestination):
             f"UID={username};"
             f"PWD={password}"
         )
+
+    def test_connection(self) -> bool:
+        """Test tilkobling til Azure SQL Database"""
+        try:
+            logging.info("Tester Azure SQL tilkobling (destination)...")
+            cnxn = pyodbc.connect(self.connection_string, timeout=10)
+            cursor = cnxn.cursor()
+            
+            # Check if table exists
+            cursor.execute(f"SELECT TOP 1 1 FROM {self.table_name}")
+            
+            cnxn.close()
+            logging.info("✅ Azure SQL destination tilkoblingstest vellykket")
+            return True
+        except pyodbc.Error as e:
+            raise ConduitConnectionError(
+                f"Azure SQL destination tilkoblingstest feilet",
+                suggestions=[
+                    "Sjekk at .env-filen har riktige credentials",
+                    f"Sjekk at tabellen '{self.table_name}' eksisterer",
+                    "Verifiser nettverkstilkobling",
+                    f"Feildetaljer: {e}"
+                ]
+            )
 
     def write(self, records: Iterable[Dict[str, Any]]):
         records = list(records)

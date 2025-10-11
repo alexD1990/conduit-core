@@ -1,28 +1,33 @@
 [project]
 name = "conduit-core"
 version = "0.1.0"
-description = ""
+description = "The VLC of data ingestion"
 authors = [
-    {name = "alex",email = "alex12060309@gmail.com"}
+    {name = "alex", email = "alex12060309@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "typer[all] (>=0.19.2,<0.20.0)",
-    "pyyaml (>=6.0.3,<7.0.0)",
-    "pydantic (>=2.11.9,<3.0.0)",
-    "pyodbc (>=5.2.0,<6.0.0)",
-    "python-dotenv (>=1.1.1,<2.0.0)"
+    "typer[all]>=0.19.2",
+    "pyyaml>=6.0.3",
+    "pydantic>=2.11.9",
+    "pyodbc>=5.2.0",
+    "python-dotenv>=1.1.1",
+    "pandas>=2.0.0",
+    "pyarrow>=14.0.0"
 ]
 
-[tool.poetry]
-packages = [{include = "conduit_core", from = "src"}]
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.4.2"
+]
+
+[project.scripts]
+conduit = "conduit_core.cli:app"
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
-[dependency-groups]
-dev = [
-    "pytest (>=8.4.2,<9.0.0)"
-]
+[tool.setuptools.packages.find]
+where = ["src"]
