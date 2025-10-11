@@ -3,6 +3,7 @@
 import logging
 from typing import Dict, Any, List, Optional
 from .errors import DataValidationError
+from .types import TypeConverter, sanitize_dict
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ class RecordValidator:
     
     def _sanitize_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
         """Sanitize record values to handle edge cases"""
+        converter = TypeConverter()
         sanitized = {}
         
         for key, value in record.items():
@@ -78,13 +80,14 @@ class RecordValidator:
             if value == '':
                 sanitized[key] = None
             # Handle "NULL", "null", "None" strings as None
-            elif isinstance(value, str) and value.lower() in ('null', 'none', 'n/a'):
+            elif isinstance(value, str) and value.lower() in ('null', 'none', 'n/a', 'na'):
                 sanitized[key] = None
             # Strip whitespace from strings
             elif isinstance(value, str):
                 sanitized[key] = value.strip()
+            # Convert types to safe formats
             else:
-                sanitized[key] = value
+                sanitized[key] = converter.to_safe_type(value)
         
         return sanitized
     

@@ -9,6 +9,7 @@ from typing import Iterable, Dict, Any
 from .base import BaseSource, BaseDestination
 from ..config import Destination as DestinationConfig
 from ..config import Source as SourceConfig
+from ..types import EncodingDetector, TypeConverter
 
 
 class CsvDestination(BaseDestination):
@@ -60,36 +61,23 @@ class CsvDestination(BaseDestination):
 
 
 class CsvSource(BaseSource):
-    """Leser data fra en lokal CSV-fil."""
+    """Leser data fra en lokal CSV-fil med encoding detection."""
 
     def __init__(self, config: SourceConfig):
         if not config.path:
             raise ValueError("En 'path' (filsti) må være definert for CsvSource.")
         self.filepath = config.path
-
-    def test_connection(self) -> bool:
-        """Test at CSV-filen eksisterer og kan leses"""
-        if not os.path.exists(self.filepath):
-            from ..errors import ConnectionError as ConduitConnectionError
-            raise ConduitConnectionError(
-                f"CSV-fil ikke funnet: {self.filepath}",
-                suggestions=[
-                    "Sjekk at filstien er riktig",
-                    "Sjekk at filen eksisterer",
-                    f"Søkte etter: {os.path.abspath(self.filepath)}"
-                ]
-            )
-        logging.info(f"✅ CSV source tilkoblingstest vellykket: {self.filepath}")
-        return True
+        # Auto-detect encoding
+        self.encoding = EncodingDetector.detect_encoding(self.filepath)
 
     def read(self, query: str = None) -> Iterable[Dict[str, Any]]:
         """Leser alle rader fra CSV-filen og yielder dem som dictionaries."""
-        print(f"Leser fra CSV-fil: {self.filepath}")
+        logging.info(f"Leser fra CSV-fil: {self.filepath} (encoding: {self.encoding})")
 
         if not os.path.exists(self.filepath):
             raise FileNotFoundError(f"Finner ikke CSV-filen: {self.filepath}")
 
-        with open(self.filepath, mode='r', encoding='utf-8') as infile:
+        with open(self.filepath, mode='r', encoding=self.encoding, errors='replace') as infile:
             reader = csv.DictReader(infile)
             for row in reader:
                 yield row

@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "name": "Test User",
+    "metadata": {
+      "nested": true,
+      "value": 42
+    },
+    "tags": [
+      "tag1",
+      "tag2"
+    ],
+    "price": 99.99,
+    "quantity": null,
+    "active": true
+  },
+  {
+    "id": 2,
+    "name": "José García",
+    "metadata": null,
+    "tags": [],
+    "price": null,
+    "quantity": 0,
+    "active": false
+  }
+]

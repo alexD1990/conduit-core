@@ -1,0 +1,6 @@
+id,name,email,price,quantity,active,rating,notes
+1,José García,josé@example.com,99.99,,true,4.5,"Special chars: é, ñ, ü, ç"
+2,李明,liming@example.com,NULL,0,false,NaN,"Contains ""quotes"" and commas, too"
+3,François Müller,,149.99,N/A,yes,,"Line
+break
+test"
