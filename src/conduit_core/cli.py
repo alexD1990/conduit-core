@@ -112,14 +112,35 @@ def run(
         "--file", 
         "-f", 
         help="Stien til din ingest.yml fil."
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Vis hva som ville blitt gjort uten å faktisk skrive data."
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Vis detaljert logging."
     )
+
 ):
     """Kjører data-innsamlingen basert på ingest.yml."""
+    log_level = logging.DEBUG if verbose else logging.INFO
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S"
     )
+
+    if dry_run:
+        print("🔍 [bold yellow]DRY RUN MODE[/bold yellow] - Ingen data vil bli skrevet\n")
+    
+    if verbose:
+        print("📝 [bold cyan]VERBOSE MODE[/bold cyan] - Detaljert logging aktivert\n")
+
     try:
         config = load_config(config_file)
         print("🚀 Starter Conduit Core run...")
