@@ -1,0 +1,16 @@
+sources:
+  - name: s3_data
+    type: s3
+    bucket: conduit-test-bucket-alex0309
+    path: backups/users.csv
+
+destinations:
+  - name: local_output
+    type: csv
+    path: "./output/from_s3.csv"
+
+resources:
+  - name: download_from_s3
+    source: s3_data
+    destination: local_output
+    query: "n/a"

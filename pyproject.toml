@@ -14,12 +14,14 @@ dependencies = [
     "pyodbc>=5.2.0",
     "python-dotenv>=1.1.1",
     "pandas>=2.0.0",
-    "pyarrow>=14.0.0"
+    "pyarrow>=14.0.0",
+    "boto3>=1.35.0"
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.4.2"
+    "pytest>=8.4.2",
+    "moto[s3]>=5.0.0"
 ]
 
 [project.scripts]
@@ -31,7 +33,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
 [dependency-groups]
 dev = [
-    "pytest (>=8.4.2,<9.0.0)"
+    "pytest (>=8.4.2,<9.0.0)",
+    "moto[s3]>=5.0.0"
 ]
