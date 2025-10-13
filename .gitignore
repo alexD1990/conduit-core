@@ -9,3 +9,12 @@ venv
 
 # Hemmeligheter
 .env
+
+# Conduit Core
+output/
+.conduit_state.json
+.conduit_state.backup.json
+
+# Test files 
+test_aws_connection.py
+test_csv_to_csv.yml

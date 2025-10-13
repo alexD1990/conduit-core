@@ -19,11 +19,19 @@ class CsvDestination(BaseDestination):
             raise ValueError("En 'path' (filsti) må være definert for CsvDestination.")
         self.filepath = Path(config.path)
         self.temp_filepath = self.filepath.with_suffix('.tmp')
+        
+        # NEW: Akkumuler records
+        self.accumulated_records = []
 
     def write(self, records: Iterable[Dict[str, Any]]):
-        """Skriver records til CSV med atomic write pattern."""
-        records = list(records)
-        if not records:
+        """Akkumulerer records. Actual write skjer i finalize()."""
+        records_list = list(records)
+        logging.info(f"🔍 CsvDestination.write() accumulating {len(records_list)} records")
+        self.accumulated_records.extend(records_list)
+
+    def finalize(self):
+        """Skriver alle akkumulerte records til CSV med atomic write pattern."""
+        if not self.accumulated_records:
             logging.info("Ingen rader å skrive til CSV.")
             return
 
@@ -32,16 +40,16 @@ class CsvDestination(BaseDestination):
         if output_dir and not output_dir.exists():
             output_dir.mkdir(parents=True, exist_ok=True)
 
-        headers = records[0].keys()
+        headers = self.accumulated_records[0].keys()
 
-        logging.info(f"Skriver {len(records)} rader til CSV-fil: {self.filepath}")
+        logging.info(f"Skriver {len(self.accumulated_records)} rader til CSV-fil: {self.filepath}")
 
         try:
             # STEP 1: Skriv til temp fil
             with open(self.temp_filepath, 'w', newline='', encoding='utf-8') as output_file:
                 writer = csv.DictWriter(output_file, fieldnames=headers)
                 writer.writeheader()
-                writer.writerows(records)
+                writer.writerows(self.accumulated_records)
             
             # STEP 2: Atomic rename (erstatter eksisterende fil trygt)
             self.temp_filepath.replace(self.filepath)

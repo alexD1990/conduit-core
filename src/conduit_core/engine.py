@@ -72,6 +72,8 @@ def run_resource(resource: Resource, config: IngestConfig, batch_size: int = 100
         batch_start_time = time.time()
         successful_batch = []
         
+        logger.info(f"🔍 DEBUG: Processing batch {batch_number} with {len(batch)} records")
+
         # Process each record in the batch
         for record in batch:
             total_processed += 1
@@ -105,6 +107,7 @@ def run_resource(resource: Resource, config: IngestConfig, batch_size: int = 100
         # Write batch if destination doesn't support write_one
         if not supports_write_one and successful_batch:
             try:
+                logger.info(f"🔍 DEBUG: Writing batch {batch_number} with {len(successful_batch)} records to destination")
                 destination.write(successful_batch)
                 total_successful += len(successful_batch)
                 
@@ -124,6 +127,11 @@ def run_resource(resource: Resource, config: IngestConfig, batch_size: int = 100
     
     logger.separator()
     
+    # NEW: Finalize destination (for akkumulerende destinations som S3)
+    if hasattr(destination, 'finalize') and callable(destination.finalize):
+        logger.info("Finalizing destination...", prefix="→")
+        destination.finalize()
+
     # Handle errors
     if error_log.has_errors():
         error_file = error_log.save()

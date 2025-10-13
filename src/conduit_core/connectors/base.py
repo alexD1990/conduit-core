@@ -34,3 +34,10 @@ class BaseDestination(ABC):
         Connectors kan override denne for mer effektiv single-record skriving.
         """
         self.write([record])
+
+    def finalize(self):
+        """
+        Optional cleanup/finalization method.
+        Kalles når alle batches er prosessert.
+        """
+        pass

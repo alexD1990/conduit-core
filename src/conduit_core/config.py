@@ -9,15 +9,15 @@ from typing import List, Optional
 class Source(BaseModel):
     name: str
     type: str
-    # Endret: Dette feltet er nå valgfritt
     connection_string: Optional[str] = None
     path: Optional[str] = None
+    bucket: Optional[str] = None
 
 class Destination(BaseModel):
     name: str
     type: str
-    # Endret: Dette feltet er nå valgfritt
     path: Optional[str] = None
+    bucket: Optional[str] = None
 
 class Resource(BaseModel):
     name: str

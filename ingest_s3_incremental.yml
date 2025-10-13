@@ -1,0 +1,17 @@
+sources:
+  - name: local_csv
+    type: csv
+    path: "./data/input_users.csv"
+
+destinations:
+  - name: s3_backup
+    type: s3
+    bucket: conduit-test-bucket-alex0309
+    path: backups/users_incremental.csv
+
+resources:
+  - name: incremental_backup
+    source: local_csv
+    destination: s3_backup
+    query: "n/a"
+    incremental_column: id
