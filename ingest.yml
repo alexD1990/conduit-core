@@ -1,61 +1,17 @@
-# ingest.yml - Local file transfers only (no cloud costs!)
-
-sources:
-  - name: local_csv_source
-    type: csv
-    path: "./data/input_users.csv"
-
-destinations:
-  - name: local_csv_output
-    type: csv
-    path: "./output/processed_users.csv"
-
-resources:
-  - name: csv_to_csv_local
-    source: local_csv_source
-    destination: local_csv_output
-    query: "n/a"
-
-# ingest.yml - Multiple local transfer scenarios
+# ingest.yml - Local CSV transfer
 
 sources:
   - name: csv_users
     type: csv
     path: "./data/input_users.csv"
-  
-  - name: json_products
-    type: json
-    path: "./tests/fixtures/data/normal.json"
-  
-  - name: parquet_data
-    type: parquet
-    path: "./tests/fixtures/data/normal.parquet"
 
 destinations:
   - name: csv_output
     type: csv
     path: "./output/users_output.csv"
-  
-  - name: json_output
-    type: json
-    path: "./output/products_output.json"
-  
-  - name: csv_from_parquet
-    type: csv
-    path: "./output/parquet_to_csv.csv"
 
 resources:
   - name: users_csv_to_csv
     source: csv_users
     destination: csv_output
-    query: "n/a"
-  
-  - name: products_json_to_json
-    source: json_products
-    destination: json_output
-    query: "n/a"
-  
-  - name: parquet_to_csv_conversion
-    source: parquet_data
-    destination: csv_from_parquet
     query: "n/a"
