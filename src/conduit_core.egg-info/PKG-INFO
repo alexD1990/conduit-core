@@ -19,79 +19,500 @@ Dynamic: license-file
 
 # Conduit Core
 
-**An open-source command-line tool (CLI) for declarative, reliable, and testable data ingestion.**
+**The VLC of Data Ingestion - It Just Works™**
+
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)]()
+[![Python](https://img.shields.io/badge/python-3.12+-blue)]()
+[![License](https://img.shields.io/badge/license-MIT-blue)]()
+
+An open-source, bulletproof command-line tool for declarative, reliable, and testable data ingestion. Conduit Core is designed to be the industry standard for the "Extract & Load" part of the modern data stack - the perfect companion to **dbt**.
 
 ---
 
 ## Vision
 
-Conduit Core is designed to be the industry standard for the "Extract & load" part of the modern data stack. Our goal is to be the perfect companion to **dbt**, bringing principles like modularity, version control, and simple configuration to the world of data ingestion.
+Conduit Core moves any data between any sources without breaking. Our philosophy:
 
-## The Problem It Solves
+- ✅ **It just works** - Auto-detects formats, handles edge cases gracefully
+- ✅ **Never crashes** - Bulletproof error handling with retries and recovery
+- ✅ **Always transparent** - Real-time progress, detailed logs, dry-run mode
+- ✅ **Declarative** - Simple YAML configuration, version-controlled
+- ✅ **Production-ready** - Atomic state, checkpoints, resume capability
 
-The process of getting data into the data warehouse is often a disorganized landscape of custom, brittle Python scripts. Conduit Core solves this by standardizing and simplifying this process, reducing sources of error and maintenance overhead.
+---
 
-## Getting Started: A 4-Step Guide
+## Features
 
-Follow these steps to set up and run your first data ingestion pipeline with Conduit Core.
+### Bulletproof Reliability
+- **Retry logic** with exponential backoff on failures
+- **Automatic checkpointing** - resume from exact failure point
+- **Atomic state management** - never lose progress
+- **Comprehensive error handling** - helpful suggestions when things go wrong
+- **Connection validation** - test before running
 
-### Step 1: Install Conduit Core
+### Beautiful User Experience
+- **Real-time progress bars** with throughput metrics
+- **Auto-detection** - CSV delimiters, file encodings, data types
+- **Dry-run mode** - preview without writing data
+- **Verbose logging** - debug with detailed output
+- **Smart defaults** - minimal configuration needed
 
-First, install the tool using pip:
-```bash
-pip install conduit-core
-```
+### Developer Friendly
+- **Type resilient** - handles dates, decimals, NULLs, special characters
+- **Schema inference** - auto-detect column types
+- **Multiple formats** - CSV, JSON, Parquet, SQL databases
+- **Incremental loading** - only process new data
+- **Extensive testing** - 60+ tests covering edge cases
 
-### Step 2: Define Your Pipeline in ```ingest.yml```
+---
 
-Next, create a file named ```ingest.yml``` in your project's root directory. This file is your main control panel where you declare what data to move, from where, and to where.
+## Quick Start
 
-Example: Here, we define a pipeline to fetch new user data from an Azure SQL database and save it to a local CSV file.
+### Installation
 
+Clone the repository
+```git clone https://github.com/YOUR_USERNAME/conduit-core.git```
+
+```cd conduit-core```
+
+Install with pip
+```pip install -e```
+
+### Verify installation
+```conduit --help```
+
+---
+
+
+
+# Your First Pipeline
+### 1. Create ```ingest.yml```:
+```yaml
 sources:
-  - name: my_azure_db
-    type: azuresql
+  - name: my_csv_file
+    type: csv
+    path: "./data/users.csv"
 
 destinations:
-  - name: local_csv_output
-    type: csv
-    path: "./output/azure_users.csv"
+  - name: output_json
+    type: json
+    path: "./output/users.json"
 
 resources:
-  - name: get_new_users
-    source: my_azure_db
-    destination: local_csv_output
-    incremental_column: "UserID"
-    query: "SELECT UserID, Username, Email FROM dbo.Users WHERE UserID > :last_value;"
+  - name: csv_to_json
+    source: my_csv_file
+    destination: output_json
+    query: "n/a"
+```
 
-### Step 3: Configure Your Secrets in .env
 
-For sources that require passwords or API keys, create a .env file in the same directory. This file keeps your secrets safe and out of version control.
+### 2. Create your source file (data/users.csv):
+```yaml
+id,name,email
+1,Alice,alice@example.com
+2,Bob,bob@example.com
+```
 
-Remember to add .env to your .gitignore file!
+### 3. Run the pipeline:
+```yaml
+conduit run
 
-# Credentials for the 'my_azure_db' source
-DB_SERVER=your-server-name.database.windows.net
+Output:
+
+ Starting Conduit Core run...
+ csv_to_json ━━━━━━━━━━━━━━━━━━━━ 100% • 0:00:00 • 1234.5 rows/sec
+
+ Summary for csv_to_json:
+ • Rows processed: 2
+ • Time elapsed: 0.01s
+ • Throughput: 200.0 rows/sec
+
+ Conduit Core run complete!
+```
+
+ # Core Concepts
+
+## Sources
+Sources define where data comes from:
+
+### sources:
+```yaml
+  # Local CSV file (auto-detects delimiter and encoding)
+  - name: local_csv
+    type: csv
+    path: "./data/input.csv"
+  
+  # JSON file
+  - name: local_json
+    type: json
+    path: "./data/input.json"
+  
+  # Parquet file
+  - name: local_parquet
+    type: parquet
+    path: "./data/input.parquet"
+  
+  # Azure SQL Database
+  - name: azure_db
+    type: azuresql
+     Credentials from .env file
+```
+
+## Destinations
+Destinations define where data goes:
+
+### destinations:
+```yaml
+  # Local CSV output
+  - name: csv_output
+    type: csv
+    path: "./output/result.csv"
+  
+  # JSON output
+  - name: json_output
+    type: json
+    path: "./output/result.json"
+  
+  # Azure SQL Database
+  - name: azure_dest
+    type: azuresql
+    path: "dbo.OutputTable"
+```
+## Resources
+Resources connect sources to destinations:
+
+### resources:
+```yaml
+  # Simple transfer
+  - name: simple_transfer
+    source: local_csv
+    destination: json_output
+    query: "n/a"
+  
+  # With SQL query
+  - name: filtered_data
+    source: azure_db
+    destination: csv_output
+    query: "SELECT * FROM Users WHERE active = 1"
+  
+  # Incremental loading
+  - name: new_orders_only
+    source: azure_db
+    destination: json_output
+    incremental_column: "order_id"
+    query: "SELECT * FROM Orders WHERE order_id > :last_value"
+```
+## CLI Commands
+```conduit run```
+Run your data pipeline:
+```yaml
+# Basic run
+conduit run
+
+# Specify config file
+conduit run --file my_config.yml
+
+# Dry run (preview without writing)
+conduit run --dry-run
+
+# Verbose logging
+conduit run --verbose
+
+# Resume from checkpoint
+conduit run --resume
+```
+## Test all connections before running:
+
+```conduit test```
+```yaml
+# Output:
+ Testing connections...
+ 
+# Sources:
+ local_csv (csv): Connected
+ azure_db (azuresql): Connected
+ 
+# Destinations:
+#json_output (json): Connected
+```
+## Validate your configuration file
+
+```conduit validate```
+```yaml
+conduit validate
+
+# Output:
+  Validating configuration file: ingest.yml
+  Configuration is valid!
+```
+
+## List all saved checkpoints:
+
+```conduit checkpoints```
+```yaml
+# Output:
+ Found 2 checkpoint(s):
+ 
+ • large_transfer
+   Row: 15000
+   Time: 2025-10-12T14:30:45
+   Rows processed: 15000
+```
+
+# Remove all checkpoints:
+
+```conduit clear-checkpoints```
+```yaml
+# Output:
+   All checkpoints removed!
+```
+
+## Configuration & Secrets
+
+### Environment Variables (```.env```)
+### Store sensitive credentials in a ```.env``` file:
+```yaml
+# Azure SQL Database
+DB_SERVER=your-server.database.windows.net
 DB_DATABASE=your-database
 DB_USER=your-username
 DB_PASSWORD=your-password
 
-### Step 4: Run Your Pipeline
-
-Finally, execute the ingestion from your terminal:
-
-```bash
-conduit run
+# AWS (for future S3 connector)
+AWS_ACCESS_KEY_ID=your-key
+AWS_SECRET_ACCESS_KEY=your-secret
 ```
 
-# Conduit Core will now:
+### Important: Add ```.env``` to your ```.gitignore```!
 
-1. Read your ```ingest.yml``` configuration.
+## Supported Connectors
 
-2. Load the necessary secrets from your ```.env file.```
+### Currently Available
 
-3. Connect to the Azure SQL database.
+| Connector     | Type     | Source | Destination | Features                         |
+|:--------------|:---------|:------:|:-----------:|:---------------------------------|
+| **CSV**       | File     |   ✅   |      ✅    | Auto-detect delimiter, encoding  |
+| **JSON**      | File     |   ✅   |      ✅    | Supports nested structures       |
+| **Parquet**   | File     |   ✅   |      ✅    | High-performance columnar format |
+| **Azure SQL** | Database |   ✅   |      ✅    | Full SQL query support           |
 
-4. Run the query to fetch only new rows.
+### Coming Soon
 
-5. Write the new data to ./output/azure_users.csv.
+This is the roadmap for new connectors planned for future versions.
+
+| Connector      | Type           | Status  |
+|:---------------|:---------------|:--------|
+| **S3**         | Cloud Storage  | Planned |
+| **PostgreSQL** | Database       | Planned |
+| **MySQL**      | Database       | Planned |
+| **DynamoDB**   | NoSQL          | Planned |
+| **Redshift**   | Data Warehouse | Planned |
+
+
+# Advanced Features
+
+## Incremental Loading
+
+Only process new data with incremental columns:
+```yaml
+resources:
+  - name: new_users
+    source: database
+    destination: data_lake
+    incremental_column: "user_id"
+    query: "SELECT * FROM users WHERE user_id > :last_value"
+```
+
+### State is automatically tracked in ```.conduit_state.json```:
+```yaml
+{
+    "new_users": 12345
+}
+```
+Next run will only fetch users with ```user_id > 12345```.
+
+## Resume from Failures
+
+### If a pipeline crashes mid-run, resume from the exact point:
+```yaml
+# Pipeline crashes at row 15,000 out of 100,000
+conduit run
+
+# Resume from checkpoint
+conduit run --resume
+#  Skipped 15,000 already-processed rows
+#  Processing continues from row 15,001
+```
+
+## Auto-Detection
+
+### Conduit automatically detects:
+
+- CSV delimiters: ```,``` ```;``` ```\t``` ```|```
+- File encodings: UTF-8, Latin-1, Windows-1252
+- Data types: integers, floats, booleans, dates, datetimes
+- NULL values: ```NULL```, ```None```, ```N/A```,empty strings
+
+## Schema Inference
+
+### Generate SQL tables automatically:
+```yaml
+from conduit_core.schema import SchemaInferrer, TableAutoCreator
+
+# Infer schema from data
+records = [{"id": 1, "name": "Alice", "age": 30}]
+schema = SchemaInferrer.infer_schema(records)
+
+# Generate CREATE TABLE statement
+sql = TableAutoCreator.generate_create_table_sql(
+    "users", 
+    schema, 
+    dialect="postgresql"
+)
+print(sql)
+ CREATE TABLE IF NOT EXISTS users (
+   "id" INTEGER NOT NULL,
+   "name" TEXT NOT NULL,
+   "age" INTEGER NOT NULL
+ );
+```
+
+ ## Testing
+
+ ### Run the comprehensive test suite:
+```yaml
+ # Run all tests
+pytest -v
+
+# Run specific test file
+pytest tests/test_config.py -v
+
+# Run with coverage
+pytest --cov=conduit_core --cov-report=html
+
+# Run integration tests only
+pytest tests/integration/ -v
+```
+
+### Test Coverage:
+
+- 60+ tests covering all features
+- Unit tests for core functionality
+- Integration tests for end-to-end flows
+- Edge case handling (NULLs, special characters, encodings)
+
+---
+
+# Architecture
+
+## Project Structure
+```yaml
+conduit-core/
+├── src/conduit_core/
+│   ├── cli.py              # CLI commands
+│   ├── config.py           # Configuration loading
+│   ├── engine.py           # Pipeline execution
+│   ├── state.py            # State management
+│   ├── checkpoint.py       # Resume capability
+│   ├── validators.py       # Data validation
+│   ├── types.py            # Type conversion
+│   ├── schema.py           # Schema inference
+│   ├── errors.py           # Custom exceptions
+│   └── connectors/
+│       ├── base.py         # Base classes
+│       ├── registry.py     # Auto-discovery
+│       ├── csv.py          # CSV connector
+│       ├── json_connector.py
+│       ├── parquet_connector.py
+│       └── azuresql.py
+├── tests/
+│   ├── test_*.py           # Unit tests
+│   ├── integration/        # Integration tests
+│   └── fixtures/           # Test data
+├── data/                   # Input data (gitignored)
+├── output/                 # Output data (gitignored)
+├── ingest.yml             # Pipeline configuration
+├── .env                   # Secrets (gitignored)
+└── README.md
+```
+
+## Core Components
+
+1. Config Layer - YAML parsing with Pydantic validation
+2. Connector Registry - Auto-discovers all connectors
+3. Engine - Orchestrates data flow with progress tracking
+4. State Manager - Atomic state persistence with backups
+5. Checkpoint System - Periodic progress saves for resume
+6. Validators - Data sanitization and validation
+7. Type System - Robust type conversion
+
+---
+# Troubleshooting
+
+### Common Issues
+
+Problem: ```conduit: command not found```
+Solution:
+```yaml
+### Make sure you installed in editable mode
+pip install -e .
+
+### Or run directly
+python -m conduit_core.cli run
+```
+
+Problem: CSV delimiter not detected correctly
+Solution:
+```yaml
+# Use verbose mode to see detection
+conduit run --verbose
+
+# Manually specify in config (future feature)
+```
+
+Problem: Database connection fails
+Solution:
+```yaml
+# Test connection first
+conduit test
+
+# Check your .env file
+cat .env
+
+# Verify network connectivity
+ping your-server.database.windows.net
+```
+
+Problem: Special characters garbled
+Solution:
+```yaml
+# Conduit auto-detects encoding, but you can verify:
+conduit run --verbose
+
+# Check source file encoding:
+file -i your_file.csv
+```
+
+# Contributing
+
+Contributions are welcome! Areas we'd love help with:
+
+ - New Connectors (PostgreSQL, MySQL, MongoDB, etc.)
+ - More Tests (especially edge cases)
+ - Documentation (examples, tutorials)
+ - Bug Fixes
+ - Feature Requests
+
+ # License
+
+ MIT License - see LICENSE file for details.
+
+ # Acknowledgments
+
+ Built with:
+
+- Typer - CLI framework
+- Rich - Beautiful terminal output
+- Pydantic - Data validation
+- Pandas - Data manipulation
+- PyArrow - Parquet support
