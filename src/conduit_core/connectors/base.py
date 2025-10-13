@@ -2,57 +2,35 @@
 
 from abc import ABC, abstractmethod
 from typing import Iterable, Dict, Any
-import logging
-
-logger = logging.getLogger(__name__)
-
 
 class BaseSource(ABC):
-    """Base class for all data source connectors."""
+    """En 'kontrakt' for alle datakilde-konnektorer."""
 
     @abstractmethod
     def read(self, query: str = None) -> Iterable[Dict[str, Any]]:
         """
-        Read data from the source and return a stream of records.
-        Each record is a dictionary.
+        Leser data fra kilden og returnerer en strøm av rader.
+        Hver rad er en dictionary.
         """
         pass
-    
-    def test_connection(self) -> bool:
-        """
-        Test if connection to source is working.
-        
-        Returns:
-            True if connection successful, False otherwise
-        
-        Raises:
-            ConnectionError with helpful message if connection fails
-        """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not implement test_connection()"
-        )
-
 
 class BaseDestination(ABC):
-    """Base class for all destination connectors."""
+    """En 'kontrakt' for alle destinasjons-konnektorer."""
 
     @abstractmethod
     def write(self, records: Iterable[Dict[str, Any]]):
         """
-        Receive a stream of records and write them to the destination.
+        Mottar en strøm av rader og skriver dem til destinasjonen.
+        Brukes for batch-skriving.
         """
         pass
     
-    def test_connection(self) -> bool:
+    def write_one(self, record: Dict[str, Any]):
         """
-        Test if connection to destination is working.
+        Skriver én enkelt record til destinasjonen.
+        Dette er en optional metode for connectors som støtter single-record writes.
         
-        Returns:
-            True if connection successful, False otherwise
-        
-        Raises:
-            ConnectionError with helpful message if connection fails
+        Default implementasjon: kaller write() med en liste av én record.
+        Connectors kan override denne for mer effektiv single-record skriving.
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not implement test_connection()"
-        )
+        self.write([record])
