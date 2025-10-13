@@ -4,13 +4,14 @@ from rich import print
 from .config import IngestConfig, Resource
 from .state import load_state, save_state
 from .errors import ErrorLog
+from .batch import read_in_batches
 from .connectors.registry import get_source_connector_map, get_destination_connector_map
 
 logger = logging.getLogger(__name__)
 
 
-def run_resource(resource: Resource, config: IngestConfig):
-    """Kjører en enkelt dataflyt-ressurs med error handling og state management."""
+def run_resource(resource: Resource, config: IngestConfig, batch_size: int = 1000):
+    """Kjører en enkelt dataflyt-ressurs med batch processing, error handling og state management."""
     logger.info(f"--- 🚀 Kjører ressurs: [bold blue]{resource.name}[/bold blue] ---")
     
     # Load state
@@ -44,46 +45,67 @@ def run_resource(resource: Resource, config: IngestConfig):
     # Initialize error log
     error_log = ErrorLog(resource.name)
     
-    # Process records with error handling
-    successful_records = []
-    row_number = 0
+    # Check if destination supports write_one (row-by-row) or only batch
+    supports_write_one = hasattr(destination, 'write_one') and callable(getattr(destination, 'write_one'))
     
-    logger.info(f"Starter prosessering av records...")
+    # Counters
+    total_processed = 0
+    total_successful = 0
+    batch_number = 0
+    max_value_seen = last_value
     
-    for record in source.read(final_query):
-        row_number += 1
-        try:
-            # Validate record (basic check)
-            if not isinstance(record, dict):
-                raise ValueError(f"Record is not a dictionary: {type(record)}")
+    logger.info(f"Starter batch-prosessering (batch_size={batch_size})...")
+    
+    # Process in batches
+    for batch in read_in_batches(source.read(final_query), batch_size=batch_size):
+        batch_number += 1
+        successful_batch = []
+        
+        # Process each record in the batch
+        for record in batch:
+            total_processed += 1
             
-            # Check if destination has write_one method (new pattern)
-            if hasattr(destination, 'write_one'):
-                destination.write_one(record)
-            else:
-                # Fallback: collect for batch write
-                successful_records.append(record)
-            
-        except Exception as e:
-            # Log the error but continue processing
-            error_log.add_error(record, e, row_number)
-            continue
-    
-    # If destination doesn't have write_one, write batch now
-    if successful_records and not hasattr(destination, 'write_one'):
-        try:
-            destination.write(successful_records)
-        except Exception as e:
-            logger.error(f"Batch write failed: {e}")
-            # Log all records as failed
-            for i, record in enumerate(successful_records, start=1):
-                error_log.add_error(record, e, row_number=i)
-            successful_records = []
+            try:
+                # Validate record (basic check)
+                if not isinstance(record, dict):
+                    raise ValueError(f"Record is not a dictionary: {type(record)}")
+                
+                # Track max value for incremental column
+                if resource.incremental_column and resource.incremental_column in record:
+                    try:
+                        current_value = int(record[resource.incremental_column])
+                        max_value_seen = max(max_value_seen, current_value)
+                    except (ValueError, TypeError):
+                        pass  # Skip if value is not convertible to int
+                
+                # If destination supports write_one, write immediately
+                if supports_write_one:
+                    destination.write_one(record)
+                    total_successful += 1
+                else:
+                    # Otherwise, collect for batch write
+                    successful_batch.append(record)
+                
+            except Exception as e:
+                # Log the error but continue processing
+                error_log.add_error(record, e, row_number=total_processed)
+                continue
+        
+        # Write batch if destination doesn't support write_one
+        if not supports_write_one and successful_batch:
+            try:
+                destination.write(successful_batch)
+                total_successful += len(successful_batch)
+                logger.info(f"Batch {batch_number}: Wrote {len(successful_batch)} records")
+            except Exception as e:
+                logger.error(f"Batch {batch_number} write failed: {e}")
+                # Log all records in failed batch as errors
+                for record in successful_batch:
+                    error_log.add_error(record, e, row_number=total_processed)
+        elif supports_write_one:
+            logger.info(f"Batch {batch_number}: Processed {len(batch)} records (row-by-row)")
     
     # Summary
-    total_processed = row_number
-    total_successful = total_processed - error_log.error_count()
-    
     logger.info(f"✅ Prosessert {total_processed} rader totalt")
     logger.info(f"✅ {total_successful} rader vellykket")
     
@@ -93,18 +115,10 @@ def run_resource(resource: Resource, config: IngestConfig):
         print(f"⚠️  [yellow]{error_log.error_count()} rows failed. See {error_file}[/yellow]")
     
     # Update state if successful records exist
-    if successful_records or (hasattr(destination, 'write_one') and total_successful > 0):
-        if resource.incremental_column:
-            # Determine what records to check for max value
-            records_to_check = successful_records if successful_records else list(source.read(final_query))
-            
-            if records_to_check and resource.incremental_column in records_to_check[0]:
-                try:
-                    new_max_value = max(int(r[resource.incremental_column]) for r in records_to_check)
-                    current_state[resource.name] = new_max_value
-                    save_state(current_state)
-                    logger.info(f"Ny state lagret for '{resource.name}': {new_max_value}")
-                except (ValueError, KeyError) as e:
-                    logger.warning(f"Kunne ikke oppdatere state: {e}")
+    if total_successful > 0 and resource.incremental_column:
+        if max_value_seen > last_value:
+            current_state[resource.name] = max_value_seen
+            save_state(current_state)
+            logger.info(f"Ny state lagret for '{resource.name}': {max_value_seen}")
     
     logger.info(f"--- ✅ Ferdig med ressurs: [bold blue]{resource.name}[/bold blue] ---\n")
