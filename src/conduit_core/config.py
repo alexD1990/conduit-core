@@ -36,6 +36,10 @@ class Destination(BaseModel):
     schema: Optional[str] = "public"
     table: Optional[str] = None
 
+    # Snowflake specific
+    account: Optional[str] = None
+    warehouse: Optional[str] = None
+
 class Resource(BaseModel):
     name: str
     source: str

@@ -1,0 +1,15 @@
+sources:
+  - name: csv_source
+    type: csv
+    path: "./data/input_users.csv"
+
+destinations:
+  - name: snowflake_dest
+    type: snowflake
+    table: CONDUIT_TEST_USERS
+
+resources:
+  - name: load_to_snowflake
+    source: csv_source
+    destination: snowflake_dest
+    query: "n/a"
