@@ -5,19 +5,36 @@ from pathlib import Path
 from pydantic import BaseModel
 from typing import List, Optional
 
-# Pydantic-modeller som definerer strukturen til ingest.yml
 class Source(BaseModel):
     name: str
     type: str
     connection_string: Optional[str] = None
     path: Optional[str] = None
     bucket: Optional[str] = None
+    
+    # PostgreSQL specific
+    host: Optional[str] = None
+    port: Optional[int] = None
+    database: Optional[str] = None
+    user: Optional[str] = None
+    password: Optional[str] = None
+    schema: Optional[str] = "public"
 
 class Destination(BaseModel):
     name: str
     type: str
     path: Optional[str] = None
     bucket: Optional[str] = None
+    connection_string: Optional[str] = None
+    
+    # PostgreSQL specific
+    host: Optional[str] = None
+    port: Optional[int] = None
+    database: Optional[str] = None
+    user: Optional[str] = None
+    password: Optional[str] = None
+    schema: Optional[str] = "public"
+    table: Optional[str] = None
 
 class Resource(BaseModel):
     name: str

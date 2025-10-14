@@ -1,0 +1,21 @@
+sources:
+  - name: csv_source
+    type: csv
+    path: "./data/input_users.csv"
+
+destinations:
+  - name: postgres_dest
+    type: postgres
+    host: localhost
+    port: 5432
+    database: postgres
+    user: postgres
+    password: mysecretpassword
+    table: users_backup
+    schema: public
+
+resources:
+  - name: load_to_postgres
+    source: csv_source
+    destination: postgres_dest
+    query: "n/a"

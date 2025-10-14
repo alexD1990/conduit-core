@@ -1,0 +1,19 @@
+sources:
+  - name: postgres_source
+    type: postgres
+    host: localhost
+    port: 5432
+    database: postgres
+    user: postgres
+    password: mysecretpassword
+
+destinations:
+  - name: csv_output
+    type: csv
+    path: "./output/postgres_export.csv"
+
+resources:
+  - name: export_users
+    source: postgres_source
+    destination: csv_output
+    query: "SELECT * FROM users ORDER BY id"
