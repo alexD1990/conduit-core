@@ -4,6 +4,7 @@ from .csv import CsvSource, CsvDestination
 from .dummy import DummySource, DummyDestination
 from .s3 import S3Source, S3Destination
 from .postgresql import PostgresSource, PostgresDestination
+from .snowflake import SnowflakeDestination
 
 __all__ = [
     'CsvSource',
@@ -14,4 +15,5 @@ __all__ = [
     'S3Destination',
     'PostgresSource',
     'PostgresDestination',
+    'SnowflakeDestination',
 ]
