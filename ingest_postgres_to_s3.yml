@@ -1,0 +1,20 @@
+sources:
+  - name: postgres_source
+    type: postgres
+    host: localhost
+    port: 5432
+    database: postgres
+    user: postgres
+    password: mysecretpassword
+
+destinations:
+  - name: s3_backup
+    type: s3
+    bucket: conduit-test-bucket-alex0309
+    path: postgres_backups/users.csv
+
+resources:
+  - name: postgres_to_s3
+    source: postgres_source
+    destination: s3_backup
+    query: "SELECT * FROM users ORDER BY id"
