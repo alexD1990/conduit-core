@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from .base import BaseSource, BaseDestination
 from ..config import Source as SourceConfig
 from ..config import Destination as DestinationConfig
+from ..utils.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +21,9 @@ class PostgresSource(BaseSource):
     def __init__(self, config: SourceConfig):
         load_dotenv()
         
-        # Build connection string
         if config.connection_string:
             self.connection_string = config.connection_string
         else:
-            # Build from individual parameters
             host = config.host or os.getenv("POSTGRES_HOST", "localhost")
             port = config.port or int(os.getenv("POSTGRES_PORT", "5432"))
             database = config.database or os.getenv("POSTGRES_DATABASE")
@@ -41,24 +40,36 @@ class PostgresSource(BaseSource):
         
         self.schema = config.schema or "public"
         
-        # Test connection
-        try:
-            conn = psycopg2.connect(self.connection_string)
-            conn.close()
-            logger.info(f"PostgresSource initialized successfully")
-        except psycopg2.Error as e:
-            raise ValueError(f"Failed to connect to PostgreSQL: {e}")
+        # Test connection with retry
+        self._test_connection()
+        logger.info(f"PostgresSource initialized successfully")
+
+    @retry_with_backoff(
+        max_attempts=3,
+        initial_delay=1.0,
+        backoff_factor=2.0,
+        exceptions=(psycopg2.OperationalError, psycopg2.DatabaseError)
+    )
+    def _test_connection(self):
+        """Test connection with retry logic."""
+        conn = psycopg2.connect(self.connection_string)
+        conn.close()
+
+    @retry_with_backoff(
+        max_attempts=3,
+        initial_delay=1.0,
+        backoff_factor=2.0,
+        exceptions=(psycopg2.OperationalError,)
+    )
+    def _execute_query(self, query: str):
+        """Execute query with retry logic."""
+        conn = psycopg2.connect(self.connection_string)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute(query)
+        return conn, cursor
 
     def read(self, query: str = None) -> Iterable[Dict[str, Any]]:
-        """
-        Leser data fra PostgreSQL med en SQL query.
-        
-        Args:
-            query: SQL query (kan inneholde :last_value placeholder)
-        
-        Yields:
-            Dictionaries representing rows
-        """
+        """Leser data fra PostgreSQL."""
         if not query or query == "n/a":
             raise ValueError("PostgresSource requires a SQL query")
         
@@ -68,16 +79,8 @@ class PostgresSource(BaseSource):
         cursor = None
         
         try:
-            # Connect to database
-            conn = psycopg2.connect(self.connection_string)
+            conn, cursor = self._execute_query(query)
             
-            # Use RealDictCursor to get results as dictionaries
-            cursor = conn.cursor(cursor_factory=RealDictCursor)
-            
-            # Execute query
-            cursor.execute(query)
-            
-            # Fetch and yield rows one by one (memory efficient)
             row_count = 0
             while True:
                 row = cursor.fetchone()
@@ -86,7 +89,7 @@ class PostgresSource(BaseSource):
                 row_count += 1
                 yield dict(row)
             
-            logger.info(f"Successfully read {row_count} rows from PostgreSQL")
+            logger.info(f"Successfully read {row_count} rows")
         
         except psycopg2.Error as e:
             logger.error(f"PostgreSQL query error: {e}")
@@ -105,11 +108,9 @@ class PostgresDestination(BaseDestination):
     def __init__(self, config: DestinationConfig):
         load_dotenv()
         
-        # Build connection string
         if config.connection_string:
             self.connection_string = config.connection_string
         else:
-            # Build from individual parameters
             host = config.host or os.getenv("POSTGRES_HOST", "localhost")
             port = config.port or int(os.getenv("POSTGRES_PORT", "5432"))
             database = config.database or os.getenv("POSTGRES_DATABASE")
@@ -130,28 +131,40 @@ class PostgresDestination(BaseDestination):
         if not self.table:
             raise ValueError("PostgresDestination requires 'table' parameter")
         
-        # Accumulate records
         self.accumulated_records = []
         
-        # Test connection
-        try:
-            conn = psycopg2.connect(self.connection_string)
-            conn.close()
-            logger.info(f"PostgresDestination initialized: {self.schema}.{self.table}")
-        except psycopg2.Error as e:
-            raise ValueError(f"Failed to connect to PostgreSQL: {e}")
+        # Test connection with retry
+        self._test_connection()
+        logger.info(f"PostgresDestination initialized: {self.schema}.{self.table}")
+
+    @retry_with_backoff(
+        max_attempts=3,
+        initial_delay=1.0,
+        exceptions=(psycopg2.OperationalError,)
+    )
+    def _test_connection(self):
+        """Test connection with retry."""
+        conn = psycopg2.connect(self.connection_string)
+        conn.close()
 
     def write(self, records: Iterable[Dict[str, Any]]):
-        """Akkumulerer records. Actual write skjer i finalize()."""
+        """Akkumulerer records."""
         records_list = list(records)
         logger.info(f"PostgresDestination.write() accumulating {len(records_list)} records")
         self.accumulated_records.extend(records_list)
 
+    @retry_with_backoff(
+        max_attempts=3,
+        initial_delay=1.0,
+        backoff_factor=2.0,
+        exceptions=(psycopg2.OperationalError, psycopg2.DatabaseError)
+    )
+    def _execute_batch_insert(self, cursor, insert_query, data):
+        """Execute batch insert with retry."""
+        execute_batch(cursor, insert_query, data, page_size=1000)
+
     def finalize(self):
-        """
-        Skriver alle akkumulerte records til PostgreSQL.
-        Bruker batch INSERT for performance.
-        """
+        """Skriver alle akkumulerte records til PostgreSQL."""
         if not self.accumulated_records:
             logger.info("No records to write to PostgreSQL")
             return
@@ -163,18 +176,15 @@ class PostgresDestination(BaseDestination):
             conn = psycopg2.connect(self.connection_string)
             cursor = conn.cursor()
             
-            # Get columns from first record
             columns = list(self.accumulated_records[0].keys())
             columns_str = ", ".join(columns)
             placeholders = ", ".join(["%s"] * len(columns))
             
-            # Build INSERT query
             insert_query = (
                 f"INSERT INTO {self.schema}.{self.table} ({columns_str}) "
                 f"VALUES ({placeholders})"
             )
             
-            # Prepare data for batch insert
             data = [
                 tuple(record.get(col) for col in columns)
                 for record in self.accumulated_records
@@ -182,13 +192,11 @@ class PostgresDestination(BaseDestination):
             
             logger.info(f"Writing {len(data)} records to {self.schema}.{self.table}")
             
-            # Execute batch insert
-            execute_batch(cursor, insert_query, data, page_size=1000)
+            # Execute with retry
+            self._execute_batch_insert(cursor, insert_query, data)
             
-            # Commit transaction
             conn.commit()
-            
-            logger.info(f"✅ Successfully wrote {len(data)} records to PostgreSQL")
+            logger.info(f"✅ Successfully wrote {len(data)} records")
         
         except psycopg2.Error as e:
             if conn:
