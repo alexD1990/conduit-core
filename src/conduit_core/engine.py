@@ -50,6 +50,9 @@ def run_resource(resource: Resource, config: IngestConfig, batch_size: int = 100
     # Initialize connectors
     source = SourceConnector(source_config)
     destination = DestinationConnector(destination_config)
+
+    # Set mode AFTER creation, directly on the connector instance
+    destination.mode = resource.mode or ('incremental' if resource.incremental_column else 'full_refresh')
     
     # Initialize error log
     error_log = ErrorLog(resource.name)
@@ -129,8 +132,10 @@ def run_resource(resource: Resource, config: IngestConfig, batch_size: int = 100
     
     # NEW: Finalize destination (for akkumulerende destinations som S3)
     if hasattr(destination, 'finalize') and callable(destination.finalize):
-        logger.info("Finalizing destination...", prefix="→")
+        logger.info("🔧 ENGINE: Calling destination.finalize()")
         destination.finalize()
+    else:
+        logger.warning("⚠️  ENGINE: destination has no finalize() method!")
 
     # Handle errors
     if error_log.has_errors():

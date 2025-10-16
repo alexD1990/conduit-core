@@ -132,10 +132,11 @@ class PostgresDestination(BaseDestination):
             raise ValueError("PostgresDestination requires 'table' parameter")
         
         self.accumulated_records = []
+        self.mode = getattr(config, 'mode', 'incremental')
         
         # Test connection with retry
         self._test_connection()
-        logger.info(f"PostgresDestination initialized: {self.schema}.{self.table}")
+        logger.info(f"PostgresDestination initialized: {self.schema}.{self.table} (mode: {self.mode})")
 
     @retry_with_backoff(
         max_attempts=3,
@@ -165,6 +166,7 @@ class PostgresDestination(BaseDestination):
 
     def finalize(self):
         """Skriver alle akkumulerte records til PostgreSQL."""
+        
         if not self.accumulated_records:
             logger.info("No records to write to PostgreSQL")
             return
@@ -175,6 +177,12 @@ class PostgresDestination(BaseDestination):
         try:
             conn = psycopg2.connect(self.connection_string)
             cursor = conn.cursor()
+            
+            # TRUNCATE if full_refresh mode
+            if self.mode == 'full_refresh':
+                print("🗑️  TRUNCATING TABLE!")
+                logger.info(f"🗑️  TRUNCATE {self.schema}.{self.table}")
+                cursor.execute(f"TRUNCATE TABLE {self.schema}.{self.table}")
             
             columns = list(self.accumulated_records[0].keys())
             columns_str = ", ".join(columns)

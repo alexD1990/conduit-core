@@ -43,10 +43,11 @@ class SnowflakeDestination(BaseDestination):
             raise ValueError("SnowflakeDestination requires account, user, password, warehouse, database, and table")
         
         self.accumulated_records = []
+        self.mode = getattr(config, 'mode', 'incremental')
         
         # Test connection with retry
         self._test_connection()
-        logger.info(f"SnowflakeDestination initialized: {self.database}.{self.schema}.{self.table}")
+        logger.info(f"SnowflakeDestination initialized: {self.database}.{self.schema}.{self.table} (mode: {self.mode})")
 
     @retry_with_backoff(
         max_attempts=3,
@@ -126,6 +127,11 @@ class SnowflakeDestination(BaseDestination):
             # Create table if not exists
             columns = list(self.accumulated_records[0].keys())
             self._create_table_if_not_exists(cursor, columns)
+            
+            # TRUNCATE if full_refresh mode
+            if self.mode == 'full_refresh':
+                logger.info(f"🗑️  TRUNCATE {self.table} (full_refresh mode)")
+                cursor.execute(f"TRUNCATE TABLE {self.table}")
             
             # Write to temp CSV
             temp_csv = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv', newline='')
