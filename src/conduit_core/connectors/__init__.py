@@ -5,6 +5,7 @@ from .dummy import DummySource, DummyDestination
 from .s3 import S3Source, S3Destination
 from .postgresql import PostgresSource, PostgresDestination
 from .snowflake import SnowflakeDestination
+from .parquet import ParquetSource, ParquetDestination
 
 __all__ = [
     'CsvSource',
@@ -16,4 +17,6 @@ __all__ = [
     'PostgresSource',
     'PostgresDestination',
     'SnowflakeDestination',
+    'ParquetSource',
+    'ParquetDestination',
 ]
