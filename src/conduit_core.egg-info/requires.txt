@@ -5,6 +5,10 @@ pyodbc>=5.2.0
 python-dotenv>=1.1.1
 pandas>=2.0.0
 pyarrow>=14.0.0
+boto3>=1.35.0
+psycopg2-binary>=2.9.0
+snowflake-connector-python>=3.0.0
 
 [dev]
 pytest>=8.4.2
+moto[s3]>=5.0.0

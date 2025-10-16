@@ -13,8 +13,12 @@ Requires-Dist: pyodbc>=5.2.0
 Requires-Dist: python-dotenv>=1.1.1
 Requires-Dist: pandas>=2.0.0
 Requires-Dist: pyarrow>=14.0.0
+Requires-Dist: boto3>=1.35.0
+Requires-Dist: psycopg2-binary>=2.9.0
+Requires-Dist: snowflake-connector-python>=3.0.0
 Provides-Extra: dev
 Requires-Dist: pytest>=8.4.2; extra == "dev"
+Requires-Dist: moto[s3]>=5.0.0; extra == "dev"
 Dynamic: license-file
 
 # Conduit Core

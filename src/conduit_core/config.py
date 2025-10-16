@@ -1,24 +1,22 @@
 # src/conduit_core/config.py
 
-import yaml
-from pathlib import Path
+from typing import Optional, List
 from pydantic import BaseModel
-from typing import List, Optional
+
 
 class Source(BaseModel):
     name: str
     type: str
-    connection_string: Optional[str] = None
     path: Optional[str] = None
     bucket: Optional[str] = None
-    
-    # PostgreSQL specific
+    connection_string: Optional[str] = None
     host: Optional[str] = None
     port: Optional[int] = None
     database: Optional[str] = None
     user: Optional[str] = None
     password: Optional[str] = None
-    schema: Optional[str] = "public"
+    schema: Optional[str] = None
+
 
 class Destination(BaseModel):
     name: str
@@ -27,18 +25,22 @@ class Destination(BaseModel):
     bucket: Optional[str] = None
     connection_string: Optional[str] = None
     
-    # PostgreSQL specific
+    # Database fields
     host: Optional[str] = None
     port: Optional[int] = None
     database: Optional[str] = None
     user: Optional[str] = None
     password: Optional[str] = None
-    schema: Optional[str] = "public"
+    schema: Optional[str] = None
     table: Optional[str] = None
-
+    
     # Snowflake specific
     account: Optional[str] = None
     warehouse: Optional[str] = None
+    
+    # Mode field
+    mode: Optional[str] = None
+
 
 class Resource(BaseModel):
     name: str
@@ -46,16 +48,19 @@ class Resource(BaseModel):
     destination: str
     query: str
     incremental_column: Optional[str] = None
+    mode: Optional[str] = None
+
 
 class IngestConfig(BaseModel):
     sources: List[Source]
     destinations: List[Destination]
     resources: List[Resource]
 
-def load_config(config_path: Path) -> IngestConfig:
-    """Laster og validerer ingest.yml fra en filsti."""
-    with open(config_path, 'r') as f:
-        data = yaml.safe_load(f)
+def load_config(filepath: str) -> IngestConfig:
+    """Load and validate ingest config from YAML file."""
+    import yaml
     
-    config = IngestConfig(**data)
-    return config
+    with open(filepath, 'r') as f:
+        config_dict = yaml.safe_load(f)
+    
+    return IngestConfig(**config_dict)
