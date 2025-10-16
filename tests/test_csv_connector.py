@@ -20,11 +20,13 @@ def test_csv_destination_writes_correctly(tmp_path, sample_records):
     output_file = tmp_path / "output.csv"
     config = DestinationConfig(name="test", type="csv", path=str(output_file))
     destination = CsvDestination(config)
-    
+
     # Handling
     destination.write(sample_records)
-    
+    destination.finalize() # ADDED THIS
+
     # Forventning
+    assert output_file.exists() # Added check for file existence
     with open(output_file, 'r') as f:
         content = f.read()
         # Sjekker at overskrifter og rader ble skrevet riktig
@@ -45,10 +47,10 @@ def test_csv_source_reads_correctly(tmp_path, sample_records):
 
     config = SourceConfig(name="test", type="csv", path=str(input_file))
     source = CsvSource(config)
-    
+
     # Handling
     read_records = list(source.read())
-    
+
     # Forventning
     assert len(read_records) == 2
     assert read_records[0]['name'] == 'Alice'

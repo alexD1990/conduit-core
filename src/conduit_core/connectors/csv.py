@@ -62,6 +62,9 @@ class CsvDestination(BaseDestination):
                 self.temp_filepath.unlink()
             logging.error(f"❌ Feil ved skriving til CSV: {e}")
             raise
+        finally:
+            # Rydd opp buffer for å frigjøre minne
+            self.accumulated_records.clear()
 
 
 class CsvSource(BaseSource):
