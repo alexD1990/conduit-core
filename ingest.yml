@@ -1,4 +1,4 @@
-# ingest.yml - Test av CSV og JSON connectors
+# ingest.yml - Test av CSV, JSON og BigQuery connectors
 
 sources:
   - name: csv_users_source
@@ -22,6 +22,12 @@ destinations:
     type: csv
     path: "./output/users_output_from_json.csv"
 
+  - name: my_bigquery_destination
+    type: bigquery
+    project: "sql-training-360912"      # <-- ENDRET
+    dataset: "conduit_core_data"        # <-- ENDRET
+    table: "users_from_conduit"         # <-- Navnet er ok
+
 resources:
   # 1. Tester CSV -> JSON (tester JsonDestination)
   - name: users_csv_to_json
@@ -35,3 +41,10 @@ resources:
     source: json_users_source
     destination: csv_from_json_destination
     query: "n/a"
+    
+  # 3. Tester CSV -> BigQuery (tester BigQueryDestination)
+  - name: load_csv_to_bigquery
+    source: csv_users_source
+    destination: my_bigquery_destination
+    query: "n/a"
+    mode: full_refresh

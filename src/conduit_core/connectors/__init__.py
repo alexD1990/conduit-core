@@ -6,6 +6,7 @@ from .s3 import S3Source, S3Destination
 from .postgresql import PostgresSource, PostgresDestination
 from .snowflake import SnowflakeDestination
 from .parquet import ParquetSource, ParquetDestination
+from .bigquery import BigQueryDestination
 
 __all__ = [
     'CsvSource',
@@ -21,4 +22,5 @@ __all__ = [
     'ParquetDestination',
     'JsonSource', 
     'JsonDestination',
+    'BigQueryDestination',
 ]

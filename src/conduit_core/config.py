@@ -38,6 +38,11 @@ class Destination(BaseModel):
     account: Optional[str] = None
     warehouse: Optional[str] = None
     
+    # BigQuery specific
+    project: Optional[str] = None          # ADDED
+    dataset: Optional[str] = None          # ADDED
+    credentials_path: Optional[str] = None # ADDED
+
     # Mode field
     mode: Optional[str] = None
 
