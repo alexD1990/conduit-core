@@ -3,166 +3,107 @@
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-CHECKPOINT_DIR = Path(".conduit_checkpoints")
-
-
 class CheckpointManager:
-    """
-    Manages checkpoints for resumable data transfers.
-    Saves progress periodically so pipelines can resume from failure points.
-    """
-    
-    def __init__(self, resource_name: str, checkpoint_interval: int = 1000):
-        """
-        Args:
-            resource_name: Name of the resource being processed
-            checkpoint_interval: Save checkpoint every N rows
-        """
-        self.resource_name = resource_name
-        self.checkpoint_interval = checkpoint_interval
-        self.checkpoint_file = CHECKPOINT_DIR / f"{resource_name}.json"
-        
-        # Create checkpoint directory if it doesn't exist
-        CHECKPOINT_DIR.mkdir(exist_ok=True)
-        
-        self.rows_processed = 0
-        self.last_checkpoint_row = 0
-    
-    def save_checkpoint(self, row_number: int, last_record: Dict[str, Any]):
-        """
-        Save a checkpoint with current progress.
-        
-        Args:
-            row_number: Current row number being processed
-            last_record: The last successfully processed record
-        """
+    """Manages persistence of pipeline checkpoints to disk."""
+
+    def __init__(self, checkpoint_dir: Optional[Path] = None):
+        """Initializes the CheckpointManager."""
+        self.checkpoint_dir = checkpoint_dir or Path(".checkpoints/")
+        try:
+            self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            logger.error(f"Permission denied to create checkpoint directory: {self.checkpoint_dir}")
+            raise
+
+    def _get_checkpoint_path(self, pipeline_name: str) -> Path:
+        """Constructs the file path for a given pipeline's checkpoint."""
+        return self.checkpoint_dir / f"{pipeline_name}.json"
+
+    def save_checkpoint(
+        self,
+        pipeline_name: str,
+        checkpoint_column: str,
+        last_value: Any,
+        records_processed: int
+    ) -> None:
+        """Saves a checkpoint to a JSON file using an atomic write pattern."""
+        checkpoint_path = self._get_checkpoint_path(pipeline_name)
+        temp_path = checkpoint_path.with_suffix(".json.tmp")
+
+        # Determine the type of the checkpoint value
+        value_type = "string"
+        if isinstance(last_value, int):
+            value_type = "integer"
+        elif isinstance(last_value, float):
+            value_type = "float"
+        elif isinstance(last_value, datetime):
+            value_type = "datetime"
+
         checkpoint_data = {
-            'resource_name': self.resource_name,
-            'row_number': row_number,
-            'last_record': last_record,
-            'timestamp': datetime.now().isoformat(),
-            'rows_processed': self.rows_processed
+            "pipeline_name": pipeline_name,
+            "checkpoint_column": checkpoint_column,
+            "last_value": last_value,
+            "checkpoint_type": value_type,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "records_processed": records_processed,
         }
-        
+
         try:
-            # Atomic write using temp file
-            temp_file = self.checkpoint_file.with_suffix('.tmp')
-            with open(temp_file, 'w') as f:
+            with temp_path.open("w", encoding="utf-8") as f:
                 json.dump(checkpoint_data, f, indent=2, default=str)
-            
-            temp_file.replace(self.checkpoint_file)
-            self.last_checkpoint_row = row_number
-            logger.debug(f"Checkpoint saved at row {row_number}")
+            temp_path.replace(checkpoint_path)
+            logger.info(f"Checkpoint saved for pipeline '{pipeline_name}' with value {last_value}.")
         except Exception as e:
-            logger.warning(f"Failed to save checkpoint: {e}")
-    
-    def load_checkpoint(self) -> Optional[Dict[str, Any]]:
-        """
-        Load the last checkpoint if it exists.
-        
-        Returns:
-            Checkpoint data or None if no checkpoint exists
-        """
-        if not self.checkpoint_file.exists():
-            logger.info("No checkpoint found, starting from beginning")
+            logger.error(f"Failed to save checkpoint for '{pipeline_name}': {e}")
+            if temp_path.exists():
+                temp_path.unlink() # Clean up temp file on failure
+
+    def load_checkpoint(self, pipeline_name: str) -> Optional[Dict[str, Any]]:
+        """Loads a checkpoint from a JSON file."""
+        checkpoint_path = self._get_checkpoint_path(pipeline_name)
+        if not checkpoint_path.exists():
             return None
-        
+
         try:
-            with open(self.checkpoint_file, 'r') as f:
-                checkpoint = json.load(f)
-            
-            logger.info(
-                f"Found checkpoint at row {checkpoint['row_number']} "
-                f"from {checkpoint['timestamp']}"
-            )
-            return checkpoint
-        except Exception as e:
-            logger.warning(f"Failed to load checkpoint: {e}")
+            with checkpoint_path.open("r", encoding="utf-8") as f:
+                checkpoint_data = json.load(f)
+            logger.info(f"Loaded checkpoint for pipeline '{pipeline_name}'.")
+            return checkpoint_data
+        except json.JSONDecodeError:
+            logger.warning(f"Corrupted checkpoint file found for '{pipeline_name}'. Ignoring.")
             return None
-    
-    def should_checkpoint(self, row_number: int) -> bool:
-        """
-        Determine if we should save a checkpoint at this row.
-        
-        Args:
-            row_number: Current row number
-        
-        Returns:
-            True if checkpoint should be saved
-        """
-        return (row_number - self.last_checkpoint_row) >= self.checkpoint_interval
-    
-    def clear_checkpoint(self):
-        """Remove checkpoint file after successful completion"""
-        try:
-            if self.checkpoint_file.exists():
-                self.checkpoint_file.unlink()
-                logger.info(f"Checkpoint cleared for {self.resource_name}")
         except Exception as e:
-            logger.warning(f"Failed to clear checkpoint: {e}")
-    
-    def increment_processed(self):
-        """Increment the count of processed rows"""
-        self.rows_processed += 1
+            logger.error(f"Failed to load checkpoint for '{pipeline_name}': {e}")
+            return None
 
+    def clear_checkpoint(self, pipeline_name: str) -> bool:
+        """Deletes a checkpoint file."""
+        checkpoint_path = self._get_checkpoint_path(pipeline_name)
+        if checkpoint_path.exists():
+            try:
+                checkpoint_path.unlink()
+                logger.info(f"Checkpoint cleared for pipeline '{pipeline_name}'.")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to clear checkpoint for '{pipeline_name}': {e}")
+                return False
+        return False
 
-def list_checkpoints() -> list[str]:
-    """
-    List all available checkpoints.
-    
-    Returns:
-        List of resource names with checkpoints
-    """
-    if not CHECKPOINT_DIR.exists():
-        return []
-    
-    checkpoints = []
-    for checkpoint_file in CHECKPOINT_DIR.glob("*.json"):
-        resource_name = checkpoint_file.stem
-        checkpoints.append(resource_name)
-    
-    return checkpoints
+    def checkpoint_exists(self, pipeline_name: str) -> bool:
+        """Checks if a checkpoint file exists for a given pipeline."""
+        return self._get_checkpoint_path(pipeline_name).exists()
 
-
-def get_checkpoint_info(resource_name: str) -> Optional[Dict[str, Any]]:
-    """
-    Get information about a specific checkpoint.
-    
-    Args:
-        resource_name: Name of the resource
-    
-    Returns:
-        Checkpoint info or None
-    """
-    checkpoint_file = CHECKPOINT_DIR / f"{resource_name}.json"
-    
-    if not checkpoint_file.exists():
-        return None
-    
-    try:
-        with open(checkpoint_file, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error(f"Failed to read checkpoint: {e}")
-        return None
-
-
-def clear_all_checkpoints():
-    """Clear all checkpoint files"""
-    if not CHECKPOINT_DIR.exists():
-        return
-    
-    count = 0
-    for checkpoint_file in CHECKPOINT_DIR.glob("*.json"):
-        try:
-            checkpoint_file.unlink()
-            count += 1
-        except Exception as e:
-            logger.warning(f"Failed to delete {checkpoint_file}: {e}")
-    
-    logger.info(f"Cleared {count} checkpoints")
+    def list_checkpoints(self) -> List[Dict[str, Any]]:
+        """Returns metadata for all saved checkpoints."""
+        checkpoints = []
+        for file_path in self.checkpoint_dir.glob("*.json"):
+            pipeline_name = file_path.stem
+            checkpoint_data = self.load_checkpoint(pipeline_name)
+            if checkpoint_data:
+                checkpoints.append(checkpoint_data)
+        return checkpoints
