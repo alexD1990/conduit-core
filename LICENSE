@@ -1,21 +1,64 @@
-MIT License
+Business Source License 1.1
 
-Copyright (c) 2025 Alex
+Licensor: Alexandro Dronnen
+Licensed Work: Conduit Core
+The Licensed Work is (c) 2025 Alexandro Dronnen
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Additional Use Grant:
+You may use this software free of charge for any purpose — personal, educational, or commercial — 
+including within production environments and enterprise systems.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+The only restriction is that you may not use this software, or any modified version of it, 
+to offer a managed service, hosted service, or Software-as-a-Service (SaaS) 
+where the primary value of the service is derived from the Licensed Work itself, 
+without obtaining a commercial license from the Licensor.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Change Date: 1 January 2030
+Change License: Apache License, Version 2.0
+
+On the Change Date, the Licensor will make the Licensed Work available under the 
+Change License, as provided in the Business Source License 1.1.
+
+-------------------------------------------------------------------------------
+This Business Source License (the "License") sets forth the terms under which the 
+Licensor is providing the Licensed Work. Using the Licensed Work in any form means 
+you agree to these terms.
+
+1. License Grant
+   The Licensor hereby grants you the right to copy, modify, create derivative works, 
+   redistribute, and make any internal or production use of the Licensed Work, 
+   subject to the limitations and conditions set forth below.
+
+2. Restrictions
+   The grant above does not include the right to use the Licensed Work for 
+   offering it as part of a hosted, managed, or Software-as-a-Service (SaaS) product 
+   where the primary value of the service is derived from the Licensed Work itself, 
+   without obtaining a commercial license from the Licensor.
+
+   Example allowed uses:
+   - Embedding or using Conduit Core internally in your company's data pipelines.
+   - Running Conduit Core in production for your own systems or customers.
+   
+   Example restricted uses:
+   - Hosting Conduit Core as a paid cloud service or platform.
+   - Building a SaaS product that uses Conduit Core as its core engine.
+
+3. Change Date and License
+   On the Change Date specified above, the Licensed Work will automatically be made 
+   available under the Change License, which will then govern its use.
+
+4. Notices
+   You must include a copy of this License with all copies of the Licensed Work, 
+   and you must include attribution to the Licensor in any derivative works.
+
+5. Disclaimer
+   THE LICENSED WORK IS PROVIDED "AS IS" WITHOUT WARRANTIES OR CONDITIONS OF ANY 
+   KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF 
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT. IN NO 
+   EVENT SHALL THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, 
+   WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM OR OUT OF 
+   THE USE OR INABILITY TO USE THE LICENSED WORK.
+
+-------------------------------------------------------------------------------
+For more information on the Business Source License, see:
+https://mariadb.com/bsl11

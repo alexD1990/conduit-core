@@ -3,8 +3,9 @@ name = "conduit-core"
 version = "0.1.0"
 description = "The VLC of data ingestion"
 authors = [
-    {name = "alex", email = "alex12060309@gmail.com"}
+    {name = "alexandro dronnen", email = "alex12060309@gmail.com"}
 ]
+license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
