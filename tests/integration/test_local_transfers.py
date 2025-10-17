@@ -26,7 +26,6 @@ def test_csv_to_csv(fixtures_dir, output_dir):
     assert (output_dir / "output.csv").exists()
     # Add more assertions...
 
-@pytest.mark.skip(reason="JSON connector not in v1.0")
 def test_csv_to_json(fixtures_dir, output_dir):
     """Test CSV → JSON transfer"""
     config = IngestConfig(
