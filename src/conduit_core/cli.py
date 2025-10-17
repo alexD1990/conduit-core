@@ -2,6 +2,7 @@
 
 import logging
 import time
+import os
 import typer
 from pathlib import Path
 from typing import Optional
@@ -119,8 +120,16 @@ def run(
         "--dry-run",
         help="Preview pipeline without writing data",
     ),
+    no_progress: bool = typer.Option(
+        False,
+        "--no-progress",
+        help="Disable progress bars (useful for logs/CI)",
+    ),
 ):
     """Kjører data-innsamlingen basert på ingest.yml."""
+    if no_progress:
+        os.environ['CONDUIT_NO_PROGRESS'] = '1'
+
     logging.basicConfig(
         level=logging.WARNING,
         format="%(asctime)s - %(levelname)s - %(message)s",
@@ -135,7 +144,6 @@ def run(
         config = load_config(config_file)
         print_header()
         for resource in config.resources:
-            # Pass the dry_run flag to the engine
             run_resource(resource, config, batch_size=batch_size, dry_run=dry_run)
         pipeline_elapsed = time.time() - pipeline_start
         print_summary(len(config.resources), pipeline_elapsed)
@@ -167,6 +175,7 @@ def manifest(
 
     console = Console()
     table = Table(title="Pipeline Execution History")
+    # ... (rest of manifest command is unchanged)
     table.add_column("Pipeline", style="cyan")
     table.add_column("Status", style="green")
     table.add_column("Records", justify="right")
@@ -188,6 +197,7 @@ def manifest(
         )
     console.print(table)
 
+
 @app.command()
 def checkpoints():
     """List all saved checkpoints."""
@@ -202,6 +212,7 @@ def checkpoints():
 
     console = Console()
     table = Table(title="Saved Checkpoints")
+    # ... (rest of checkpoints command is unchanged)
     table.add_column("Pipeline", style="cyan")
     table.add_column("Column", style="green")
     table.add_column("Last Value", justify="right")
