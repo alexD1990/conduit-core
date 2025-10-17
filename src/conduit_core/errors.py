@@ -29,9 +29,7 @@ class ErrorLog:
         self.resource_name = resource_name
         self.error_dir = error_dir
         self.errors: List[Dict[str, Any]] = []
-
-        # Opprett error directory hvis den ikke finnes
-        self.error_dir.mkdir(parents=True, exist_ok=True)
+        # --- FIX IS HERE: Directory creation is REMOVED from __init__ ---
 
     def add_error(self, record: Dict[str, Any], error: Exception, row_number: int = None):
         """Legger til en feilet record i error loggen."""
@@ -43,7 +41,6 @@ class ErrorLog:
             "timestamp": datetime.now().isoformat(),
         }
         self.errors.append(error_entry)
-
         logger.warning(f"Row {row_number} failed: {type(error).__name__}: {error}")
 
     def save(self) -> Path:
@@ -51,19 +48,20 @@ class ErrorLog:
         if not self.errors:
             return None
 
+        # --- FIX IS HERE: Directory creation is MOVED to save() ---
+        # Create the directory only when we actually have something to save.
+        self.error_dir.mkdir(parents=True, exist_ok=True)
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         error_file = self.error_dir / f"{self.resource_name}_errors_{timestamp}.json"
-
         error_summary = {
             "resource": self.resource_name,
             "total_errors": len(self.errors),
             "timestamp": datetime.now().isoformat(),
             "errors": self.errors,
         }
-
         with open(error_file, "w", encoding="utf-8") as f:
             json.dump(error_summary, f, indent=2, ensure_ascii=False)
-
         logger.info(f"Error log saved to: {error_file}")
         return error_file
 

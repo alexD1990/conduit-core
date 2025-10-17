@@ -58,9 +58,10 @@ def test(
     console.print("\n[bold]Testing Connections...[/bold]\n")
     all_passed = True
 
-    # Test sources
-    from conduit_core.connectors.registry import get_source_connector_map
+    from conduit_core.connectors.registry import get_source_connector_map, get_destination_connector_map
     source_map = get_source_connector_map()
+    dest_map = get_destination_connector_map()
+
     for source_config in config.sources:
         SourceClass = source_map.get(source_config.type)
         if not SourceClass:
@@ -77,9 +78,6 @@ def test(
             console.print(f"[red]✗[/red]  Source '{source_config.name}': Unexpected error: {e}")
             all_passed = False
 
-    # Test destinations
-    from conduit_core.connectors.registry import get_destination_connector_map
-    dest_map = get_destination_connector_map()
     for dest_config in config.destinations:
         DestClass = dest_map.get(dest_config.type)
         if not DestClass:
@@ -116,6 +114,11 @@ def run(
         "-b",
         help="Antall records per batch (default: 1000)",
     ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Preview pipeline without writing data",
+    ),
 ):
     """Kjører data-innsamlingen basert på ingest.yml."""
     logging.basicConfig(
@@ -123,13 +126,17 @@ def run(
         format="%(asctime)s - %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+    
+    if dry_run:
+        print("\n[bold yellow]🔍 DRY RUN MODE - No data will be written[/bold yellow]\n")
 
     pipeline_start = time.time()
     try:
         config = load_config(config_file)
         print_header()
         for resource in config.resources:
-            run_resource(resource, config, batch_size=batch_size)
+            # Pass the dry_run flag to the engine
+            run_resource(resource, config, batch_size=batch_size, dry_run=dry_run)
         pipeline_elapsed = time.time() - pipeline_start
         print_summary(len(config.resources), pipeline_elapsed)
     except Exception as e:
