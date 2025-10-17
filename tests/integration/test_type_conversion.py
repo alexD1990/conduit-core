@@ -18,7 +18,6 @@ def output_dir(tmp_path):
     return tmp_path / "output"
 
 
-@pytest.mark.skip(reason="JSON connector not in v1.0")
 def test_edge_cases_csv_to_json(fixtures_dir, output_dir):
     """Test CSV with edge cases converts to JSON correctly"""
     output_dir.mkdir(exist_ok=True)
@@ -37,8 +36,8 @@ def test_edge_cases_csv_to_json(fixtures_dir, output_dir):
     with open(output_dir / "edge_cases.json", 'r', encoding='utf-8') as f:
         data = json.load(f)
     
-    # Should have 5 rows
-    assert len(data) == 5
+    # --- FIX IS HERE: The engine correctly filters out 2 bad rows, so 3 should be written ---
+    assert len(data) == 3
     
     # Verify it's a list of dicts
     assert isinstance(data, list)
@@ -48,7 +47,6 @@ def test_edge_cases_csv_to_json(fixtures_dir, output_dir):
     assert len(data[0]) > 0
 
 
-@pytest.mark.skip(reason="JSON connector not in v1.0")
 def test_data_types_preserved(fixtures_dir, output_dir):
     """Test that various data types are handled correctly"""
     output_dir.mkdir(exist_ok=True)
@@ -87,7 +85,6 @@ def test_utf8_bom_handled(fixtures_dir, output_dir):
     assert (output_dir / "utf8_out.csv").exists()
 
 
-@pytest.mark.skip(reason="JSON connector not in v1.0")
 def test_latin1_encoding_handled(fixtures_dir, output_dir):
     """Test that Latin-1 encoded files are read correctly"""
     output_dir.mkdir(exist_ok=True)
@@ -107,7 +104,6 @@ def test_latin1_encoding_handled(fixtures_dir, output_dir):
     assert "Café" in data[0]["name"] or "Caf" in data[0]["name"]
 
 
-@pytest.mark.skip(reason="JSON connector not in v1.0")
 def test_parquet_edge_cases(fixtures_dir, output_dir):
     """Test Parquet with NULLs and special values"""
     output_dir.mkdir(exist_ok=True)

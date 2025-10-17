@@ -18,8 +18,8 @@ class Source(BaseModel):
     schema: Optional[str] = None
     
     # Checkpoint/Resume fields
-    checkpoint_column: Optional[str] = None  # ADDED
-    resume: bool = False                     # ADDED
+    checkpoint_column: Optional[str] = None
+    resume: bool = False
 
 
 class Destination(BaseModel):
@@ -46,6 +46,10 @@ class Destination(BaseModel):
     project: Optional[str] = None
     dataset: Optional[str] = None
     credentials_path: Optional[str] = None
+
+    # JSON-specific
+    format: Optional[str] = None  # ADDED
+    indent: Optional[int] = None  # ADDED
 
     # Mode field
     mode: Optional[str] = None
