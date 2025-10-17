@@ -1,17 +1,37 @@
-# ingest.yml - Local CSV transfer
+# ingest.yml - Test av CSV og JSON connectors
 
 sources:
-  - name: csv_users
+  - name: csv_users_source
     type: csv
     path: "./data/input_users.csv"
+    
+  - name: json_users_source
+    type: json
+    path: "./output/users_as_json.json"
 
 destinations:
-  - name: csv_output
+  - name: csv_users_destination
     type: csv
-    path: "./output/users_output.csv"
+    path: "./output/users_output_from_csv.csv"
+    
+  - name: json_users_destination
+    type: json
+    path: "./output/users_as_json.json"
+    
+  - name: csv_from_json_destination
+    type: csv
+    path: "./output/users_output_from_json.csv"
 
 resources:
-  - name: users_csv_to_csv
-    source: csv_users
-    destination: csv_output
+  # 1. Tester CSV -> JSON (tester JsonDestination)
+  - name: users_csv_to_json
+    source: csv_users_source
+    destination: json_users_destination
+    query: "n/a"
+
+  # 2. Tester JSON -> CSV (tester JsonSource)
+  #    Bruker filen fra steg 1 som input.
+  - name: users_json_to_csv
+    source: json_users_source
+    destination: csv_from_json_destination
     query: "n/a"

@@ -19,4 +19,6 @@ __all__ = [
     'SnowflakeDestination',
     'ParquetSource',
     'ParquetDestination',
+    'JsonSource', 
+    'JsonDestination',
 ]
