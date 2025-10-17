@@ -6,9 +6,13 @@ import typer
 from pathlib import Path
 from typing import Optional
 from rich import print
+from rich.console import Console
+from rich.table import Table
+
 from .config import load_config
 from .engine import run_resource
 from .logging_utils import print_header, print_summary
+from .errors import ConnectionError
 
 app = typer.Typer()
 
@@ -35,6 +39,70 @@ def validate(
         print(f"❌ [bold red]Feil i konfigurasjon:[/bold red]\n{e}")
 
 @app.command()
+def test(
+    config_file: Path = typer.Option(
+        "ingest.yml",
+        "--file",
+        "-f",
+        help="Path to configuration file"
+    )
+):
+    """Test all connections before running pipeline."""
+    console = Console()
+    try:
+        config = load_config(config_file)
+    except Exception as e:
+        console.print(f"[red]❌ Config error:[/red] {e}")
+        raise typer.Exit(code=1)
+
+    console.print("\n[bold]Testing Connections...[/bold]\n")
+    all_passed = True
+
+    # Test sources
+    from conduit_core.connectors.registry import get_source_connector_map
+    source_map = get_source_connector_map()
+    for source_config in config.sources:
+        SourceClass = source_map.get(source_config.type)
+        if not SourceClass:
+            console.print(f"[yellow]⚠[/yellow]  Source '{source_config.name}': Unknown type '{source_config.type}'")
+            continue
+        try:
+            source = SourceClass(source_config)
+            source.test_connection()
+            console.print(f"[green]✓[/green]  Source '{source_config.name}' ({source_config.type})")
+        except ConnectionError as e:
+            console.print(f"[red]✗[/red]  Source '{source_config.name}' failed:\n[dim]{e}[/dim]\n")
+            all_passed = False
+        except Exception as e:
+            console.print(f"[red]✗[/red]  Source '{source_config.name}': Unexpected error: {e}")
+            all_passed = False
+
+    # Test destinations
+    from conduit_core.connectors.registry import get_destination_connector_map
+    dest_map = get_destination_connector_map()
+    for dest_config in config.destinations:
+        DestClass = dest_map.get(dest_config.type)
+        if not DestClass:
+            console.print(f"[yellow]⚠[/yellow]  Destination '{dest_config.name}': Unknown type '{dest_config.type}'")
+            continue
+        try:
+            dest = DestClass(dest_config)
+            dest.test_connection()
+            console.print(f"[green]✓[/green]  Destination '{dest_config.name}' ({dest_config.type})")
+        except ConnectionError as e:
+            console.print(f"[red]✗[/red]  Destination '{dest_config.name}' failed:\n[dim]{e}[/dim]\n")
+            all_passed = False
+        except Exception as e:
+            console.print(f"[red]✗[/red]  Destination '{dest_config.name}': Unexpected error: {e}")
+            all_passed = False
+
+    if all_passed:
+        console.print("\n[green bold]✅ All connections successful![/green bold]")
+    else:
+        console.print("\n[red bold]❌ Some connections failed.[/red bold]")
+        raise typer.Exit(code=1)
+
+@app.command()
 def run(
     config_file: Path = typer.Option(
         "ingest.yml",
@@ -57,7 +125,6 @@ def run(
     )
 
     pipeline_start = time.time()
-
     try:
         config = load_config(config_file)
         print_header()
@@ -78,9 +145,7 @@ def manifest(
 ):
     """Show pipeline execution history."""
     from conduit_core.manifest import PipelineManifest
-    from rich.table import Table
-    from rich.console import Console
-
+    
     manifest = PipelineManifest(manifest_path)
     if failed_only:
         entries = manifest.get_failed_runs()
@@ -120,9 +185,7 @@ def manifest(
 def checkpoints():
     """List all saved checkpoints."""
     from conduit_core.checkpoint import CheckpointManager
-    from rich.table import Table
-    from rich.console import Console
-
+    
     mgr = CheckpointManager()
     checkpoints = mgr.list_checkpoints()
 

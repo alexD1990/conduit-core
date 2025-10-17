@@ -9,6 +9,7 @@ from google.api_core.exceptions import GoogleAPICallError, NotFound
 
 from .base import BaseDestination
 from ..config import Destination as DestinationConfig
+from ..errors import ConnectionError
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,6 @@ class BigQueryDestination(BaseDestination):
         self.table_name = config.table
         self.credentials_path = getattr(config, 'credentials_path', None)
         self.location = getattr(config, 'location', 'US')
-        self.mode = config.mode or 'append'
         
         if not all([self.project_id, self.dataset_id, self.table_name]):
             raise ValueError(
@@ -47,6 +47,31 @@ class BigQueryDestination(BaseDestination):
         except Exception as e:
             raise ConnectionError(f"BigQuery authentication failed: {e}") from e
 
+    def test_connection(self) -> bool:
+        """Test BigQuery connection and dataset access."""
+        try:
+            # Test that we can access the dataset
+            dataset_ref = f"{self.project_id}.{self.dataset_id}"
+            self.client.get_dataset(dataset_ref)
+            return True
+        except Exception as e:
+            error_msg = str(e)
+            suggestions = []
+            if "404" in error_msg or "not found" in error_msg.lower():
+                suggestions.append(f"Ensure the dataset exists: bq mk {self.project_id}:{self.dataset_id}")
+                suggestions.append("Check the dataset name for typos.")
+            elif "403" in error_msg or "permission" in error_msg.lower():
+                suggestions.append("Check IAM permissions: 'BigQuery Data Editor' and 'BigQuery Job User' roles are recommended.")
+                suggestions.append("Verify the service account or your user account has access to the project.")
+            elif "credentials" in error_msg.lower():
+                suggestions.append("Check that your credentials_path is correct (if using a service account).")
+                suggestions.append("Verify the GOOGLE_APPLICATION_CREDENTIALS environment variable or run `gcloud auth application-default login`.")
+            
+            suggestion_str = "\n".join(f"  • {s}" for s in suggestions)
+            raise ConnectionError(
+                f"BigQuery connection failed: {error_msg}\n\nSuggestions:\n{suggestion_str}"
+            ) from e
+
     def write(self, records: Iterable[Dict[str, Any]]):
         """Accumulates records in memory."""
         self.accumulated_records.extend(list(records))
@@ -62,10 +87,9 @@ class BigQueryDestination(BaseDestination):
             autodetect=True,
         )
 
-        # Check destination config mode, not self.mode
         if self.mode == 'full_refresh':
             job_config.write_disposition = bigquery.WriteDisposition.WRITE_TRUNCATE
-        else:  # Default to append
+        else:
             job_config.write_disposition = bigquery.WriteDisposition.WRITE_APPEND
 
         try:

@@ -11,209 +11,148 @@ from .base import BaseSource, BaseDestination
 from ..config import Source as SourceConfig
 from ..config import Destination as DestinationConfig
 from ..utils.retry import retry_with_backoff
+from ..errors import ConnectionError
 
 logger = logging.getLogger(__name__)
+
+
+def _test_postgres_connection(connection_string: str, host: str, port: int, database: str):
+    """Shared connection test logic for PostgreSQL connectors."""
+    try:
+        conn = psycopg2.connect(connection_string)
+        conn.close()
+        return True
+    except psycopg2.OperationalError as e:
+        error_msg = str(e).strip()
+        suggestions = []
+        if "password authentication failed" in error_msg:
+            suggestions.append("Check username and password in your config or .env file.")
+        elif "could not connect to server" in error_msg:
+            suggestions.append("Check that the host and port are correct.")
+            suggestions.append(f"Verify the server is running and accessible: pg_isready -h {host} -p {port}")
+            suggestions.append("Check firewall rules.")
+        elif "database" in error_msg and "does not exist" in error_msg:
+            suggestions.append(f"Ensure the database '{database}' exists.")
+        else:
+            suggestions.append("Check the full connection string format.")
+        
+        suggestion_str = "\n".join(f"  • {s}" for s in suggestions)
+        raise ConnectionError(
+            f"PostgreSQL connection failed: {error_msg}\n\nSuggestions:\n{suggestion_str}"
+        ) from e
 
 
 class PostgresSource(BaseSource):
     """Leser data fra PostgreSQL database."""
 
-    def __init__(self, config: SourceConfig):
+    def __init__(self, config: Any):
         load_dotenv()
-        
-        if config.connection_string:
-            self.connection_string = config.connection_string
-        else:
-            host = config.host or os.getenv("POSTGRES_HOST", "localhost")
-            port = config.port or int(os.getenv("POSTGRES_PORT", "5432"))
-            database = config.database or os.getenv("POSTGRES_DATABASE")
-            user = config.user or os.getenv("POSTGRES_USER")
-            password = config.password or os.getenv("POSTGRES_PASSWORD")
-            
-            if not all([database, user, password]):
-                raise ValueError("PostgresSource requires database, user, and password")
-            
-            self.connection_string = (
-                f"host={host} port={port} dbname={database} "
-                f"user={user} password={password}"
-            )
-        
-        self.schema = config.schema or "public"
-        
-        # Test connection with retry
-        self._test_connection()
-        logger.info(f"PostgresSource initialized successfully")
+        is_pydantic_config = not isinstance(config, dict)
 
-    @retry_with_backoff(
-        max_attempts=3,
-        initial_delay=1.0,
-        backoff_factor=2.0,
-        exceptions=(psycopg2.OperationalError, psycopg2.DatabaseError)
-    )
-    def _test_connection(self):
-        """Test connection with retry logic."""
-        conn = psycopg2.connect(self.connection_string)
-        conn.close()
+        self.host = (config.host if is_pydantic_config else config.get('host')) or os.getenv("POSTGRES_HOST", "localhost")
+        self.port = (config.port if is_pydantic_config else config.get('port')) or int(os.getenv("POSTGRES_PORT", "5432"))
+        self.database = (config.database if is_pydantic_config else config.get('database')) or os.getenv("POSTGRES_DATABASE")
+        self.user = (config.user if is_pydantic_config else config.get('user')) or os.getenv("POSTGRES_USER")
+        self.password = (config.password if is_pydantic_config else config.get('password')) or os.getenv("POSTGRES_PASSWORD")
+        self.schema = (config.schema if is_pydantic_config else config.get('schema')) or "public"
+        self.connection_string = (config.connection_string if is_pydantic_config else config.get('connection_string'))
 
-    @retry_with_backoff(
-        max_attempts=3,
-        initial_delay=1.0,
-        backoff_factor=2.0,
-        exceptions=(psycopg2.OperationalError,)
-    )
+        if not self.connection_string:
+            if not all([self.database, self.user, self.password]):
+                raise ValueError("PostgresSource requires database, user, and password.")
+            self.connection_string = f"host={self.host} port={self.port} dbname={self.database} user={self.user} password={self.password}"
+        
+        logger.info(f"PostgresSource initialized successfully.")
+    
+    def test_connection(self) -> bool:
+        """Test PostgreSQL connection."""
+        return _test_postgres_connection(self.connection_string, self.host, self.port, self.database)
+
+    @retry_with_backoff(exceptions=(psycopg2.OperationalError,))
     def _execute_query(self, query: str):
-        """Execute query with retry logic."""
         conn = psycopg2.connect(self.connection_string)
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute(query)
         return conn, cursor
 
     def read(self, query: str = None) -> Iterable[Dict[str, Any]]:
-        """Leser data fra PostgreSQL."""
         if not query or query == "n/a":
-            raise ValueError("PostgresSource requires a SQL query")
+            raise ValueError("PostgresSource requires a SQL query.")
         
-        logger.info(f"Executing query: {query[:100]}...")
-        
-        conn = None
-        cursor = None
-        
+        conn, cursor = None, None
         try:
             conn, cursor = self._execute_query(query)
-            
-            row_count = 0
-            while True:
-                row = cursor.fetchone()
-                if row is None:
-                    break
-                row_count += 1
+            for row in cursor:
                 yield dict(row)
-            
-            logger.info(f"Successfully read {row_count} rows")
-        
-        except psycopg2.Error as e:
-            logger.error(f"PostgreSQL query error: {e}")
-            raise ValueError(f"Failed to execute query: {e}")
-        
         finally:
-            if cursor:
-                cursor.close()
-            if conn:
-                conn.close()
+            if cursor: cursor.close()
+            if conn: conn.close()
 
 
 class PostgresDestination(BaseDestination):
     """Skriver data til PostgreSQL database."""
 
-    def __init__(self, config: DestinationConfig):
+    def __init__(self, config: Any):
         load_dotenv()
-        
-        if config.connection_string:
-            self.connection_string = config.connection_string
-        else:
-            host = config.host or os.getenv("POSTGRES_HOST", "localhost")
-            port = config.port or int(os.getenv("POSTGRES_PORT", "5432"))
-            database = config.database or os.getenv("POSTGRES_DATABASE")
-            user = config.user or os.getenv("POSTGRES_USER")
-            password = config.password or os.getenv("POSTGRES_PASSWORD")
-            
-            if not all([database, user, password]):
-                raise ValueError("PostgresDestination requires database, user, and password")
-            
-            self.connection_string = (
-                f"host={host} port={port} dbname={database} "
-                f"user={user} password={password}"
-            )
-        
-        self.schema = config.schema or "public"
-        self.table = config.table
-        
+        is_pydantic_config = not isinstance(config, dict)
+
+        self.host = (config.host if is_pydantic_config else config.get('host')) or os.getenv("POSTGRES_HOST", "localhost")
+        self.port = (config.port if is_pydantic_config else config.get('port')) or int(os.getenv("POSTGRES_PORT", "5432"))
+        self.database = (config.database if is_pydantic_config else config.get('database')) or os.getenv("POSTGRES_DATABASE")
+        self.user = (config.user if is_pydantic_config else config.get('user')) or os.getenv("POSTGRES_USER")
+        self.password = (config.password if is_pydantic_config else config.get('password')) or os.getenv("POSTGRES_PASSWORD")
+        self.schema = (config.schema if is_pydantic_config else config.get('schema')) or "public"
+        self.table = config.table if is_pydantic_config else config.get('table')
+        self.connection_string = (config.connection_string if is_pydantic_config else config.get('connection_string'))
+
+        if not self.connection_string:
+            if not all([self.database, self.user, self.password]):
+                raise ValueError("PostgresDestination requires database, user, and password.")
+            self.connection_string = f"host={self.host} port={self.port} dbname={self.database} user={self.user} password={self.password}"
+
         if not self.table:
-            raise ValueError("PostgresDestination requires 'table' parameter")
-        
+            raise ValueError("PostgresDestination requires a 'table' parameter")
+
         self.accumulated_records = []
-        self.mode = getattr(config, 'mode', 'incremental')
-        
-        # Test connection with retry
-        self._test_connection()
+        self.mode = (config.mode if is_pydantic_config else config.get('mode')) or 'append'
         logger.info(f"PostgresDestination initialized: {self.schema}.{self.table} (mode: {self.mode})")
 
-    @retry_with_backoff(
-        max_attempts=3,
-        initial_delay=1.0,
-        exceptions=(psycopg2.OperationalError,)
-    )
-    def _test_connection(self):
-        """Test connection with retry."""
-        conn = psycopg2.connect(self.connection_string)
-        conn.close()
+    def test_connection(self) -> bool:
+        """Test PostgreSQL connection."""
+        return _test_postgres_connection(self.connection_string, self.host, self.port, self.database)
 
     def write(self, records: Iterable[Dict[str, Any]]):
-        """Akkumulerer records."""
-        records_list = list(records)
-        logger.info(f"PostgresDestination.write() accumulating {len(records_list)} records")
-        self.accumulated_records.extend(records_list)
+        self.accumulated_records.extend(list(records))
 
-    @retry_with_backoff(
-        max_attempts=3,
-        initial_delay=1.0,
-        backoff_factor=2.0,
-        exceptions=(psycopg2.OperationalError, psycopg2.DatabaseError)
-    )
+    @retry_with_backoff(exceptions=(psycopg2.OperationalError, psycopg2.DatabaseError))
     def _execute_batch_insert(self, cursor, insert_query, data):
-        """Execute batch insert with retry."""
         execute_batch(cursor, insert_query, data, page_size=1000)
 
     def finalize(self):
-        """Skriver alle akkumulerte records til PostgreSQL."""
-        
         if not self.accumulated_records:
-            logger.info("No records to write to PostgreSQL")
             return
         
-        conn = None
-        cursor = None
-        
+        conn, cursor = None, None
         try:
             conn = psycopg2.connect(self.connection_string)
             cursor = conn.cursor()
             
-            # TRUNCATE if full_refresh mode
             if self.mode == 'full_refresh':
-                print("🗑️  TRUNCATING TABLE!")
-                logger.info(f"🗑️  TRUNCATE {self.schema}.{self.table}")
                 cursor.execute(f"TRUNCATE TABLE {self.schema}.{self.table}")
             
             columns = list(self.accumulated_records[0].keys())
-            columns_str = ", ".join(columns)
+            columns_str = ", ".join(f'"{c}"' for c in columns)
             placeholders = ", ".join(["%s"] * len(columns))
+            insert_query = f"INSERT INTO {self.schema}.{self.table} ({columns_str}) VALUES ({placeholders})"
+            data = [tuple(record.get(col) for col in columns) for record in self.accumulated_records]
             
-            insert_query = (
-                f"INSERT INTO {self.schema}.{self.table} ({columns_str}) "
-                f"VALUES ({placeholders})"
-            )
-            
-            data = [
-                tuple(record.get(col) for col in columns)
-                for record in self.accumulated_records
-            ]
-            
-            logger.info(f"Writing {len(data)} records to {self.schema}.{self.table}")
-            
-            # Execute with retry
             self._execute_batch_insert(cursor, insert_query, data)
-            
             conn.commit()
-            logger.info(f"✅ Successfully wrote {len(data)} records")
-        
+            logger.info(f"✅ Successfully wrote {len(data)} records to {self.schema}.{self.table}")
         except psycopg2.Error as e:
-            if conn:
-                conn.rollback()
-            logger.error(f"Failed to write to PostgreSQL: {e}")
-            raise ValueError(f"PostgreSQL write error: {e}")
-        
+            if conn: conn.rollback()
+            raise ValueError(f"PostgreSQL write error: {e}") from e
         finally:
-            if cursor:
-                cursor.close()
-            if conn:
-                conn.close()
+            self.accumulated_records.clear()
+            if cursor: cursor.close()
+            if conn: conn.close()
