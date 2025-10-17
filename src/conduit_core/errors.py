@@ -9,6 +9,11 @@ from typing import Dict, Any, List
 logger = logging.getLogger(__name__)
 
 
+class ConnectionError(Exception):
+    """Raised when a connector fails to connect to its source/destination."""
+    pass
+
+
 class DataValidationError(Exception):
     """Raised when data validation fails."""
     def __init__(self, message, **kwargs):

@@ -14,6 +14,19 @@ class BaseSource(ABC):
         """
         pass
 
+    def test_connection(self) -> bool:
+        """
+        Test connection to source.
+        
+        Returns:
+            bool: True if connection successful
+        
+        Raises:
+            ConnectionError: If connection fails, with helpful message
+        """
+        # Default implementation - subclasses should override
+        return True
+
 class BaseDestination(ABC):
     """En 'kontrakt' for alle destinasjons-konnektorer."""
 
@@ -41,3 +54,16 @@ class BaseDestination(ABC):
         Kalles når alle batches er prosessert.
         """
         pass
+        
+    def test_connection(self) -> bool:
+        """
+        Test connection to destination.
+        
+        Returns:
+            bool: True if connection successful
+        
+        Raises:
+            ConnectionError: If connection fails, with helpful message
+        """
+        # Default implementation - subclasses should override
+        return True
