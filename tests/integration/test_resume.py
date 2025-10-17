@@ -4,7 +4,7 @@ import pytest
 from pathlib import Path
 from conduit_core.config import IngestConfig, Source, Destination, Resource
 from conduit_core.engine import run_resource
-from conduit_core.checkpoint import CheckpointManager, clear_all_checkpoints
+from conduit_core.checkpoint import CheckpointManager
 import json
 
 

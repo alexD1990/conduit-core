@@ -16,6 +16,10 @@ class Source(BaseModel):
     user: Optional[str] = None
     password: Optional[str] = None
     schema: Optional[str] = None
+    
+    # Checkpoint/Resume fields
+    checkpoint_column: Optional[str] = None  # ADDED
+    resume: bool = False                     # ADDED
 
 
 class Destination(BaseModel):
@@ -39,9 +43,9 @@ class Destination(BaseModel):
     warehouse: Optional[str] = None
     
     # BigQuery specific
-    project: Optional[str] = None          # ADDED
-    dataset: Optional[str] = None          # ADDED
-    credentials_path: Optional[str] = None # ADDED
+    project: Optional[str] = None
+    dataset: Optional[str] = None
+    credentials_path: Optional[str] = None
 
     # Mode field
     mode: Optional[str] = None

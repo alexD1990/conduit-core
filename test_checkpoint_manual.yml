@@ -1,0 +1,17 @@
+sources:
+  - name: test_csv
+    type: csv
+    path: tests/fixtures/data/normal.csv
+    resume: true
+    checkpoint_column: id
+
+destinations:
+  - name: test_output
+    type: csv
+    path: /tmp/checkpoint_test.csv
+
+resources:
+  - name: checkpoint_test
+    source: test_csv
+    destination: test_output
+    query: "n/a"
