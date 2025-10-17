@@ -75,8 +75,10 @@ def run_resource(
             destination = DestinationConnector(destination_config)
 
             # Set mode AFTER creation, directly on the connector instance
-            destination.mode = resource.mode or (
-                "incremental" if resource.incremental_column else "full_refresh"
+            destination.mode = (
+                resource.mode 
+                or destination_config.mode 
+                or ("incremental" if resource.incremental_column else "append")
             )
             # Add mode to tracker metadata
             tracker.metadata = {"mode": destination.mode}
