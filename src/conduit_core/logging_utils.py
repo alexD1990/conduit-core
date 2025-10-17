@@ -100,7 +100,7 @@ class ConduitLogger:
         
         console.print(text)
     
-    def complete_resource(self, total_records: int, successful: int, failed: int):
+    def complete_resource(self, total_processed: int, successful: int, failed: int, dry_run: bool = False):
         """Logger completion av en resource."""
         if not self.start_time:
             return
@@ -108,27 +108,37 @@ class ConduitLogger:
         elapsed = time.time() - self.start_time
         timestamp = self._get_timestamp()
         
+        # --- Main completion line ---
         text = Text()
         text.append(f"{timestamp} ", style="dim")
-        text.append("DONE ", style="bold green")
+        
+        status_icon = "✓" if failed == 0 else "⚠"
+        
+        if dry_run:
+            text.append(f"{status_icon} [DRY RUN] DONE ", style="bold yellow")
+        else:
+            text.append(f"{status_icon} DONE ", style="bold green")
+        
         text.append(f"resource {self.resource_name} ", style="bold")
-        text.append(f"[in {elapsed:.2f}s]", style="dim green")
+        text.append(f"[in {elapsed:.2f}s]", style="dim")
         
         console.print(text)
         
-        # Summary line
+        # --- Summary line ---
         summary = Text()
         summary.append(f"{timestamp} ", style="dim")
         summary.append("     → ", style="dim")
-        summary.append(f"{successful} ", style="green")
-        summary.append("successful, ", style="white")
         
-        if failed > 0:
-            summary.append(f"{failed} ", style="red")
-            summary.append("failed", style="white")
+        if dry_run:
+            summary.append(f"{successful} would be written", style="yellow")
         else:
-            summary.append("0 failed", style="dim")
-        
+            summary.append(f"{successful} successful, ", style="white")
+            
+            if failed > 0:
+                summary.append(f"{failed} failed", style="red")
+            else:
+                summary.append("0 failed", style="dim")
+                
         console.print(summary)
         console.print()  # Empty line
     
