@@ -4,7 +4,7 @@ import csv
 import logging
 import os
 from pathlib import Path
-from typing import Iterable, Dict, Any
+from typing import Iterable, Dict, Any, Optional
 
 from .base import BaseSource, BaseDestination
 from ..config import Destination as DestinationConfig
@@ -117,3 +117,15 @@ class CsvSource(BaseSource):
                 f"  • Run: chmod +r {self.filepath}"
             )
         return True
+
+    def estimate_total_records(self) -> Optional[int]:
+        """Counts lines in the CSV file to estimate total records."""
+        try:
+            with self.filepath.open('r', encoding='utf-8') as f:
+                # This is a fast way to count lines
+                line_count = sum(1 for _ in f)
+            # Subtract 1 for the header row
+            return max(0, line_count - 1)
+        except Exception:
+            # If we can't read the file for any reason, return None
+            return None

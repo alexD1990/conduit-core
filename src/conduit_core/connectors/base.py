@@ -1,7 +1,7 @@
 # src/conduit_core/connectors/base.py
 
 from abc import ABC, abstractmethod
-from typing import Iterable, Dict, Any
+from typing import Iterable, Dict, Any, Optional
 
 class BaseSource(ABC):
     """En 'kontrakt' for alle datakilde-konnektorer."""
@@ -26,6 +26,15 @@ class BaseSource(ABC):
         """
         # Default implementation - subclasses should override
         return True
+
+    def estimate_total_records(self) -> Optional[int]:
+        """
+        Estimate total number of records (for progress bar).
+        
+        Returns:
+            int: Estimated record count, or None if unknown
+        """
+        return None  # Default: unknown
 
 class BaseDestination(ABC):
     """En 'kontrakt' for alle destinasjons-konnektorer."""
