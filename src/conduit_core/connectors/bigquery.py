@@ -1,5 +1,4 @@
 # src/conduit_core/connectors/bigquery.py
-
 import logging
 from typing import Iterable, Dict, Any, Optional
 
@@ -26,9 +25,7 @@ class BigQueryDestination(BaseDestination):
         self.location = getattr(config, 'location', 'US')
         
         if not all([self.project_id, self.dataset_id, self.table_name]):
-            raise ValueError(
-                "BigQueryDestination requires 'project', 'dataset', and 'table'."
-            )
+            raise ValueError("BigQueryDestination requires 'project', 'dataset', and 'table'.")
 
         self.client = self._get_client()
         self.table_id = f"{self.project_id}.{self.dataset_id}.{self.table_name}"
@@ -51,7 +48,6 @@ class BigQueryDestination(BaseDestination):
     def test_connection(self) -> bool:
         """Test BigQuery connection and dataset access."""
         try:
-            # Test that we can access the dataset
             dataset_ref = f"{self.project_id}.{self.dataset_id}"
             self.client.get_dataset(dataset_ref)
             return True
@@ -76,7 +72,7 @@ class BigQueryDestination(BaseDestination):
     def execute_ddl(self, sql: str) -> None:
         try:
             query_job = self.client.query(sql)
-            query_job.result()  # Wait for the DDL job to complete
+            query_job.result()
             logger.info("DDL executed successfully")
         except Exception as e:
             logger.error(f"BigQuery DDL execution failed: {e}")
@@ -86,45 +82,48 @@ class BigQueryDestination(BaseDestination):
         """Execute ALTER TABLE statement."""
         self.execute_ddl(alter_sql)
 
-    def _map_bq_type_to_conduit(self, bq_type: str) -> str:
-        """Maps BigQuery data types to internal Conduit types."""
-        bq_type = bq_type.upper()
-        if bq_type in ('INT64', 'INTEGER', 'SMALLINT', 'BIGINT', 'TINYINT', 'BYTEINT'):
-            return 'integer'
-        if bq_type in ('FLOAT64', 'NUMERIC', 'DECIMAL', 'BIGNUMERIC', 'BIGDECIMAL', 'FLOAT'):
-            return 'float'
-        if bq_type == 'BOOL':
-            return 'boolean'
-        if bq_type == 'DATE':
-            return 'date'
-        if bq_type in ('DATETIME', 'TIMESTAMP'):
-            return 'timestamp'
-        if bq_type in ('JSON', 'STRUCT', 'RECORD'):
-            return 'json'
-        # Default for STRING, BYTES, GEOGRAPHY, etc.
-        return 'string'
-
+    # --- Phase 3 additions ---
     def get_table_schema(self) -> Optional[Dict[str, Any]]:
-        """Retrieves the current table schema from BigQuery."""
-        try:
-            table_ref = self.client.get_table(self.table_id)
-            
-            columns = []
-            for field in table_ref.schema:
-                columns.append({
-                    "name": field.name,
-                    "type": self._map_bq_type_to_conduit(field.field_type),
-                    "nullable": True if field.mode == 'NULLABLE' else False
-                })
-            
-            return {"columns": columns}
+        """Get table schema from BigQuery"""
+        from google.api_core.exceptions import NotFound
 
+        try:
+            table = self.client.get_table(self.table_id)
+
+            schema = {}
+            for field in table.db_schema:
+                internal_type = self._map_bq_type_to_internal(field.field_type)
+                schema[field.name] = {
+                    'type': internal_type,
+                    'nullable': (field.mode != 'REQUIRED')
+                }
+
+            return schema
         except NotFound:
-            logger.info(f"Table '{self.table_id}' not found, returning no schema.")
-            return None # Table doesn't exist, which is fine
+            logger.info(f"Table '{self.table_id}' not found, returning None.")
+            return None
         except Exception as e:
             logger.error(f"Failed to get table schema for '{self.table_id}': {e}")
             raise ConnectionError(f"Failed to get table schema: {e}") from e
+
+    def _map_bq_type_to_internal(self, bq_type: str) -> str:
+        """Map BigQuery type to internal schema type"""
+        type_mapping = {
+            'INTEGER': 'integer',
+            'INT64': 'integer',
+            'FLOAT': 'float',
+            'FLOAT64': 'float',
+            'NUMERIC': 'decimal',
+            'BIGNUMERIC': 'decimal',
+            'BOOLEAN': 'boolean',
+            'BOOL': 'boolean',
+            'DATE': 'date',
+            'DATETIME': 'datetime',
+            'TIMESTAMP': 'datetime',
+            'STRING': 'string',
+        }
+        return type_mapping.get(bq_type.upper(), 'string')
+    # --- End Phase 3 additions ---
 
     def write(self, records: Iterable[Dict[str, Any]]):
         """Accumulates records in memory."""
@@ -160,14 +159,13 @@ class BigQueryDestination(BaseDestination):
             logger.info(f"✅ Successfully loaded {load_job.output_rows} rows to {self.table_id}")
 
         except NotFound:
-            # Check if auto_create_table was supposed to run but didn't
             if self.config.auto_create_table:
-                 logger.error(f"Table '{self.table_id}' not found. 'auto_create_table' was enabled but failed or was skipped (e.g., no schema inferred).")
-                 raise ValueError(f"Table '{self.table_id}' not found. Auto-create failed or was skipped.")
+                logger.error(f"Table '{self.table_id}' not found. Auto-create failed or skipped.")
+                raise ValueError(f"Table '{self.table_id}' not found. Auto-create failed or skipped.")
             else:
-                 raise ValueError(f"The BigQuery table '{self.table_id}' does not exist. Enable 'auto_create_table' in your destination config to create it.") from None
+                raise ValueError(f"The BigQuery table '{self.table_id}' does not exist. Enable 'auto_create_table' in your destination config to create it.") from None
         except Exception as e:
-            logger.error(f"❌ An unexpected error occurred during the BigQuery load job: {e}")
+            logger.error(f"❌ Unexpected error during BigQuery load job: {e}")
             raise
         finally:
             self.accumulated_records.clear()

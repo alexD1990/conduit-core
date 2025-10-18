@@ -1,5 +1,4 @@
 # src/conduit_core/connectors/postgresql.py
-
 import logging
 import os
 from typing import Iterable, Dict, Any, Optional
@@ -43,7 +42,7 @@ def _test_postgres_connection(connection_string: str, host: str, port: int, data
 
 
 class PostgresSource(BaseSource):
-    """Leser data fra PostgreSQL database."""
+    """Reads data from PostgreSQL database."""
 
     def __init__(self, config: Any):
         super().__init__(config)
@@ -55,7 +54,7 @@ class PostgresSource(BaseSource):
         self.database = (config.database if is_pydantic_config else config.get('database')) or os.getenv("POSTGRES_DATABASE")
         self.user = (config.user if is_pydantic_config else config.get('user')) or os.getenv("POSTGRES_USER")
         self.password = (config.password if is_pydantic_config else config.get('password')) or os.getenv("POSTGRES_PASSWORD")
-        self.schema = (config.schema if is_pydantic_config else config.get('schema')) or "public"
+        self.db_schema = (config.db_schema if is_pydantic_config else config.get('schema')) or "public"
         self.connection_string = (config.connection_string if is_pydantic_config else config.get('connection_string'))
 
         if not self.connection_string:
@@ -86,12 +85,14 @@ class PostgresSource(BaseSource):
             for row in cursor:
                 yield dict(row)
         finally:
-            if cursor: cursor.close()
-            if conn: conn.close()
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
 
 
 class PostgresDestination(BaseDestination):
-    """Skriver data til PostgreSQL database."""
+    """Writes data to PostgreSQL database."""
 
     def __init__(self, config: Any):
         super().__init__(config)
@@ -103,7 +104,7 @@ class PostgresDestination(BaseDestination):
         self.database = (config.database if is_pydantic_config else config.get('database')) or os.getenv("POSTGRES_DATABASE")
         self.user = (config.user if is_pydantic_config else config.get('user')) or os.getenv("POSTGRES_USER")
         self.password = (config.password if is_pydantic_config else config.get('password')) or os.getenv("POSTGRES_PASSWORD")
-        self.schema = (config.schema if is_pydantic_config else config.get('schema')) or "public"
+        self.db_schema = (config.db_schema if is_pydantic_config else config.get('schema')) or "public"
         self.table = config.table if is_pydantic_config else config.get('table')
         self.connection_string = (config.connection_string if is_pydantic_config else config.get('connection_string'))
 
@@ -117,14 +118,13 @@ class PostgresDestination(BaseDestination):
 
         self.accumulated_records = []
         self.mode = (config.mode if is_pydantic_config else config.get('mode')) or 'append'
-        logger.info(f"PostgresDestination initialized: {self.schema}.{self.table} (mode: {self.mode})")
+        logger.info(f"PostgresDestination initialized: {self.db_schema}.{self.table} (mode: {self.mode})")
 
     def test_connection(self) -> bool:
         """Test PostgreSQL connection."""
         return _test_postgres_connection(self.connection_string, self.host, self.port, self.database)
 
     def execute_ddl(self, sql: str) -> None:
-        import psycopg2
         conn = psycopg2.connect(self.connection_string)
         try:
             with conn.cursor() as cursor:
@@ -138,67 +138,81 @@ class PostgresDestination(BaseDestination):
         """Execute ALTER TABLE statement."""
         self.execute_ddl(alter_sql)
 
-    def _map_pg_type_to_conduit(self, pg_type: str) -> str:
-        """Maps PostgreSQL data types to internal Conduit types."""
-        pg_type = pg_type.lower()
-        if pg_type in ('integer', 'bigint', 'smallint', 'serial', 'bigserial'):
-            return 'integer'
-        if pg_type in ('numeric', 'decimal', 'real', 'double precision'):
-            return 'float'
-        if pg_type in ('boolean', 'bool'):
-            return 'boolean'
-        if pg_type in ('date',):
-            return 'date'
-        if 'timestamp' in pg_type:
-            return 'timestamp'
-        if pg_type in ('json', 'jsonb'):
-            return 'json'
-        # Default for text-based types
-        if pg_type in ('character varying', 'varchar', 'text', 'char', 'bpchar'):
-            return 'string'
-        
-        logger.warning(f"Unmapped PostgreSQL type '{pg_type}', defaulting to 'string'.")
-        return 'string'
-
+    # --- Phase 3 additions ---
     def get_table_schema(self) -> Optional[Dict[str, Any]]:
-        """Query information_schema for current table structure."""
-        conn = None
+        """
+        Query PostgreSQL information_schema to get current table structure.
+
+        Returns:
+            Schema dict in same format as SchemaInferrer:
+            {column_name: {type: str, nullable: bool}}
+            Or None if table doesn't exist
+        """
+        import psycopg2
+
+        conn = psycopg2.connect(self.connection_string)
         try:
-            conn = psycopg2.connect(self.connection_string)
-            cursor = conn.cursor(cursor_factory=RealDictCursor)
-            
-            query = """
-            SELECT column_name, data_type, is_nullable
-            FROM information_schema.columns
-            WHERE table_schema = %s AND table_name = %s
-            ORDER BY ordinal_position;
-            """
-            
-            cursor.execute(query, (self.schema, self.table))
-            rows = cursor.fetchall()
-            
-            if not rows:
-                logger.warning(f"Table '{self.schema}.{self.table}' not found or has no columns.")
-                return None
+            with conn.cursor() as cursor:
+                # Check if table exists
+                cursor.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_schema = %s 
+                        AND table_name = %s
+                    )
+                """, (self.db_schema, self.table))
 
-            columns = []
-            for row in rows:
-                columns.append({
-                    "name": row['column_name'],
-                    "type": self._map_pg_type_to_conduit(row['data_type']),
-                    "nullable": True if row['is_nullable'] == 'YES' else False
-                })
-            
-            return {"columns": columns}
+                if not cursor.fetchone()[0]:
+                    return None  # Table doesn't exist
 
-        except psycopg2.Error as e:
-            logger.error(f"Failed to get table schema for '{self.schema}.{self.table}': {e}")
-            if "relation" in str(e) and "does not exist" in str(e):
-                 return None # Table doesn't exist, which is fine
-            raise ConnectionError(f"Failed to get table schema: {e}") from e
+                # Get column info
+                cursor.execute("""
+                    SELECT 
+                        column_name,
+                        data_type,
+                        is_nullable
+                    FROM information_schema.columns
+                    WHERE table_schema = %s 
+                    AND table_name = %s
+                    ORDER BY ordinal_position
+                """, (self.db_schema, self.table))
+
+                schema = {}
+                for row in cursor.fetchall():
+                    col_name, data_type, is_nullable = row
+                    internal_type = self._map_pg_type_to_internal(data_type)
+                    schema[col_name] = {
+                        'type': internal_type,
+                        'nullable': (is_nullable == 'YES')
+                    }
+
+                return schema
         finally:
-            if conn:
-                conn.close()
+            conn.close()
+
+    def _map_pg_type_to_internal(self, pg_type: str) -> str:
+        """Map PostgreSQL type to internal schema type"""
+        type_mapping = {
+            'integer': 'integer',
+            'bigint': 'integer',
+            'smallint': 'integer',
+            'double precision': 'float',
+            'real': 'float',
+            'numeric': 'decimal',
+            'decimal': 'decimal',
+            'boolean': 'boolean',
+            'date': 'date',
+            'timestamp': 'datetime',
+            'timestamp without time zone': 'datetime',
+            'timestamp with time zone': 'datetime',
+            'text': 'string',
+            'character varying': 'string',
+            'varchar': 'string',
+            'char': 'string',
+            'character': 'string',
+        }
+        return type_mapping.get(pg_type.lower(), 'string')
+    # --- End Phase 3 additions ---
 
     def write(self, records: Iterable[Dict[str, Any]]):
         self.accumulated_records.extend(list(records))
@@ -217,21 +231,24 @@ class PostgresDestination(BaseDestination):
             cursor = conn.cursor()
             
             if self.mode == 'full_refresh':
-                cursor.execute(f"TRUNCATE TABLE {self.schema}.{self.table}")
+                cursor.execute(f"TRUNCATE TABLE {self.db_schema}.{self.table}")
             
             columns = list(self.accumulated_records[0].keys())
             columns_str = ", ".join(f'"{c}"' for c in columns)
-            placeholders = ", ".join(["%s"]* len(columns))
-            insert_query = f"INSERT INTO {self.schema}.{self.table} ({columns_str}) VALUES ({placeholders})"
+            placeholders = ", ".join(["%s"] * len(columns))
+            insert_query = f"INSERT INTO {self.db_schema}.{self.table} ({columns_str}) VALUES ({placeholders})"
             data = [tuple(record.get(col) for col in columns) for record in self.accumulated_records]
             
             self._execute_batch_insert(cursor, insert_query, data)
             conn.commit()
-            logger.info(f"✅ Successfully wrote {len(data)} records to {self.schema}.{self.table}")
+            logger.info(f"✅ Successfully wrote {len(data)} records to {self.db_schema}.{self.table}")
         except psycopg2.Error as e:
-            if conn: conn.rollback()
+            if conn:
+                conn.rollback()
             raise ValueError(f"PostgreSQL write error: {e}") from e
         finally:
             self.accumulated_records.clear()
-            if cursor: cursor.close()
-            if conn: conn.close()
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()

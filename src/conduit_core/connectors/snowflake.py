@@ -1,5 +1,4 @@
 # src/conduit_core/connectors/snowflake.py
-
 import logging
 import os
 import tempfile
@@ -19,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class SnowflakeDestination(BaseDestination):
-    """Skriver data til Snowflake data warehouse."""
+    """Writes data to Snowflake data warehouse."""
 
     def __init__(self, config: DestinationConfig):
         super().__init__(config)
@@ -30,7 +29,7 @@ class SnowflakeDestination(BaseDestination):
         self.password = config.password or os.getenv('SNOWFLAKE_PASSWORD')
         self.warehouse = config.warehouse or os.getenv('SNOWFLAKE_WAREHOUSE')
         self.database = config.database or os.getenv('SNOWFLAKE_DATABASE')
-        self.schema = config.schema or os.getenv('SNOWFLAKE_SCHEMA', 'PUBLIC')
+        self.db_schema = config.db_schema or os.getenv('SNOWFLAKE_SCHEMA', 'PUBLIC')
         self.table = config.table
         
         if not all([self.account, self.user, self.password, self.warehouse, self.database, self.table]):
@@ -39,7 +38,7 @@ class SnowflakeDestination(BaseDestination):
         self.accumulated_records = []
         self.mode = getattr(config, 'mode', 'append')
         
-        logger.info(f"SnowflakeDestination initialized: {self.database}.{self.schema}.{self.table} (mode: {self.mode})")
+        logger.info(f"SnowflakeDestination initialized: {self.database}.{self.db_schema}.{self.table} (mode: {self.mode})")
 
     def _get_connection(self):
         """Helper to create a new Snowflake connection."""
@@ -49,7 +48,7 @@ class SnowflakeDestination(BaseDestination):
             password=self.password,
             warehouse=self.warehouse,
             database=self.database,
-            schema=self.schema
+            schema=self.db_schema
         )
 
     def test_connection(self) -> bool:
@@ -94,71 +93,85 @@ class SnowflakeDestination(BaseDestination):
         """Execute ALTER TABLE statement."""
         self.execute_ddl(alter_sql)
 
-    def _map_snowflake_type_to_conduit(self, sf_type: str) -> str:
-        """Maps Snowflake data types to internal Conduit types."""
-        sf_type = sf_type.upper()
-        if sf_type.startswith('NUMBER'):
-            # NUMBER(38,0) is integer, NUMBER(10,2) is float
-            if ',' in sf_type:
-                scale = sf_type.split(',')[-1].replace(')', '')
-                if int(scale) > 0:
-                    return 'float'
-            return 'integer'
-        if sf_type in ('FLOAT', 'DOUBLE'):
-            return 'float'
-        if sf_type == 'BOOLEAN':
-            return 'boolean'
-        if sf_type == 'DATE':
-            return 'date'
-        if 'TIMESTAMP' in sf_type:
-            return 'timestamp'
-        if sf_type in ('VARIANT', 'OBJECT', 'ARRAY'):
-            return 'json'
-        # Default for text types (TEXT, STRING, VARCHAR, etc.)
-        return 'string'
-
+    # --- Phase 3 additions ---
     def get_table_schema(self) -> Optional[Dict[str, Any]]:
-        """Query information_schema for current table structure."""
-        conn = None
+        """Get table schema from Snowflake INFORMATION_SCHEMA"""
+        import snowflake.connector
+
+        conn = snowflake.connector.connect(
+            user=self.user,
+            password=self.password,
+            account=self.account,
+            warehouse=self.warehouse,
+            database=self.database,
+            schema=self.db_schema
+        )
+
         try:
-            conn = self._get_connection()
-            cursor = conn.cursor(snowflake.connector.cursor.DictCursor)
-            
-            # Must use quoted identifiers for DESCRIBE
-            query = f'DESCRIBE TABLE "{self.database}"."{self.schema}"."{self.table}"'
-            
-            cursor.execute(query)
-            rows = cursor.fetchall()
-            
-            if not rows:
-                logger.warning(f"Table '{self.table}' not found or has no columns.")
+            cursor = conn.cursor()
+
+            # Check if table exists
+            cursor.execute(f"""
+                SELECT COUNT(*) 
+                FROM INFORMATION_SCHEMA.TABLES 
+                WHERE TABLE_SCHEMA = '{self.db_schema}' 
+                AND TABLE_NAME = '{self.table}'
+            """)
+
+            if cursor.fetchone()[0] == 0:
                 return None
 
-            columns = []
-            for row in rows:
-                columns.append({
-                    "name": row['name'],
-                    "type": self._map_snowflake_type_to_conduit(row['type']),
-                    "nullable": True if row['null?'] == 'Y' else False
-                })
-            
-            return {"columns": columns}
+            # Get columns
+            cursor.execute(f"""
+                SELECT 
+                    COLUMN_NAME,
+                    DATA_TYPE,
+                    IS_NULLABLE
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = '{self.db_schema}'
+                AND TABLE_NAME = '{self.table}'
+                ORDER BY ORDINAL_POSITION
+            """)
 
-        except ProgrammingError as e:
-            if "does not exist" in str(e):
-                logger.info(f"Table '{self.table}' does not exist, returning no schema.")
-                return None # Table doesn't exist, which is fine
-            logger.error(f"Failed to get table schema for '{self.table}': {e}")
-            raise ConnectionError(f"Failed to get table schema: {e}") from e
-        except Exception as e:
-            logger.error(f"An unexpected error occurred getting schema for '{self.table}': {e}")
-            raise
+            schema = {}
+            for row in cursor.fetchall():
+                col_name, data_type, is_nullable = row
+                internal_type = self._map_snowflake_type_to_internal(data_type)
+                schema[col_name] = {
+                    'type': internal_type,
+                    'nullable': (is_nullable == 'YES')
+                }
+
+            return schema
         finally:
-            if conn:
-                conn.close()
+            conn.close()
+
+    def _map_snowflake_type_to_internal(self, sf_type: str) -> str:
+        """Map Snowflake type to internal schema type"""
+        type_mapping = {
+            'NUMBER': 'integer',
+            'DECIMAL': 'decimal',
+            'NUMERIC': 'decimal',
+            'INT': 'integer',
+            'INTEGER': 'integer',
+            'BIGINT': 'integer',
+            'SMALLINT': 'integer',
+            'FLOAT': 'float',
+            'DOUBLE': 'float',
+            'BOOLEAN': 'boolean',
+            'DATE': 'date',
+            'TIMESTAMP_NTZ': 'datetime',
+            'TIMESTAMP_LTZ': 'datetime',
+            'TIMESTAMP_TZ': 'datetime',
+            'VARCHAR': 'string',
+            'TEXT': 'string',
+            'STRING': 'string',
+        }
+        return type_mapping.get(sf_type.upper(), 'string')
+    # --- End Phase 3 additions ---
 
     def write(self, records: Iterable[Dict[str, Any]]):
-        """Akkumulerer records."""
+        """Accumulate records before write."""
         self.accumulated_records.extend(list(records))
 
     @retry_with_backoff(exceptions=(DatabaseError, ProgrammingError))
@@ -169,7 +182,7 @@ class SnowflakeDestination(BaseDestination):
         cursor.execute(f"PUT file://{temp_csv_path} @{stage_name} AUTO_COMPRESS=TRUE OVERWRITE=TRUE")
         
         copy_command = f"""
-            COPY INTO {self.database}.{self.schema}.{self.table}
+            COPY INTO {self.database}.{self.db_schema}.{self.table}
             FROM @{stage_name}/{csv_filename}.gz
             FILE_FORMAT = (TYPE = CSV FIELD_OPTIONALLY_ENCLOSED_BY = '"' SKIP_HEADER = 1)
             ON_ERROR = ABORT_STATEMENT
@@ -178,7 +191,7 @@ class SnowflakeDestination(BaseDestination):
         return cursor.fetchone()
 
     def finalize(self):
-        """Skriver alle akkumulerte records til Snowflake."""
+        """Writes accumulated records to Snowflake."""
         if not self.accumulated_records:
             logger.info("No records to write to Snowflake")
             return
@@ -195,7 +208,7 @@ class SnowflakeDestination(BaseDestination):
             
             if self.mode == 'full_refresh':
                 logger.info(f"🗑️  TRUNCATE {self.table} (full_refresh mode)")
-                cursor.execute(f"TRUNCATE TABLE IF EXISTS {self.database}.{self.schema}.{self.table}")
+                cursor.execute(f"TRUNCATE TABLE IF EXISTS {self.database}.{self.db_schema}.{self.table}")
             
             with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv', newline='', encoding='utf-8') as temp_csv:
                 temp_csv_path = temp_csv.name
@@ -208,10 +221,10 @@ class SnowflakeDestination(BaseDestination):
             stage_name = f"conduit_stage_{self.table}"
             result = self._execute_snowflake_commands(cursor, stage_name, temp_csv_path)
             
-            if result and result[3] == 'LOADED': # Status is in the 4th column
-                logger.info(f"✅ Successfully loaded {result[5]} rows into Snowflake")
+            if result and len(result) >= 4 and result[3] == 'LOADED':  # Status in column 4
+                logger.info(f"✅ Successfully loaded rows into Snowflake")
             else:
-                 logger.warning(f"Snowflake COPY command did not return 'LOADED' status. Result: {result}")
+                logger.warning(f"Snowflake COPY command did not return 'LOADED' status. Result: {result}")
 
         except Exception as e:
             logger.error(f"Failed to write to Snowflake: {e}")
@@ -226,8 +239,7 @@ class SnowflakeDestination(BaseDestination):
     
     def _create_table_if_not_exists(self, cursor, columns):
         """Create table if it doesn't exist."""
-        # Using quoted identifiers to handle case-sensitivity
         column_defs = ", ".join([f'"{col.upper()}" VARCHAR' for col in columns])
-        create_table_sql = f'CREATE TABLE IF NOT EXISTS "{self.database}"."{self.schema}"."{self.table}" ({column_defs})'
+        create_table_sql = f'CREATE TABLE IF NOT EXISTS "{self.database}"."{self.db_schema}"."{self.table}" ({column_defs})'
         cursor.execute(create_table_sql)
         logger.info(f"Ensured table {self.table} exists")

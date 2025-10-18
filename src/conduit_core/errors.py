@@ -27,6 +27,14 @@ class DataQualityError(Exception):
     pass
 # --- End New Exception ---
 
+# --- New Exception for Schema Validation (Phase 3) ---
+class SchemaValidationError(Exception):
+    """Raised when schema validation fails"""
+    def __init__(self, report: 'ValidationReport'):
+        self.report = report
+        super().__init__(f"Schema validation failed:\n{report.format_errors()}")
+# --- End New Exception ---
+
 class ErrorLog:
     """Handles logging of failed records to a Dead-Letter Queue (JSON file)."""
 
