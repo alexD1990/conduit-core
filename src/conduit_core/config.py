@@ -21,6 +21,10 @@ class Source(BaseModel):
     checkpoint_column: Optional[str] = None
     resume: bool = False
 
+    # Schema fields
+    infer_schema: bool = False
+    schema_sample_size: int = 100
+
 
 class Destination(BaseModel):
     name: str
@@ -54,6 +58,10 @@ class Destination(BaseModel):
     # Mode field
     mode: Optional[str] = None
 
+    # Schema fields
+    auto_create_table: bool = False
+    validate_schema: bool = False
+
 
 class Resource(BaseModel):
     name: str
@@ -62,6 +70,7 @@ class Resource(BaseModel):
     query: str
     incremental_column: Optional[str] = None
     mode: Optional[str] = None
+    export_schema_path: Optional[str] = None  # e.g. "./schemas/users.json"
 
 
 class IngestConfig(BaseModel):

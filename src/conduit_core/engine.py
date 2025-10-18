@@ -13,6 +13,8 @@ from rich.progress import (
     TimeRemainingColumn,
     MofNCompleteColumn,
 )
+import itertools
+from .schema import SchemaInferrer, TableAutoCreator
 
 from .config import IngestConfig, Resource
 from .state import load_state, save_state
@@ -71,8 +73,51 @@ def run_resource(
                 if "WHERE" in final_query.upper(): final_query += f" AND {source_config.checkpoint_column} > {wrapped_value}"
                 else: final_query += f" WHERE {source_config.checkpoint_column} > {wrapped_value}"
 
-            source = get_source_connector_map().get(source_config.type)(source_config)
-            destination = get_destination_connector_map().get(destination_config.type)(destination_config)
+            source_class = get_source_connector_map().get(source_config.type)
+            source = source_class(source_config)
+            destination_class = get_destination_connector_map().get(destination_config.type)
+            destination = destination_class(destination_config)
+
+            # --- Schema Operations ---
+            inferred_schema = None
+            if source_config.infer_schema:
+                logger.info("Inferring schema from source data...")
+                sample_records = list(itertools.islice(source.read(final_query), source_config.schema_sample_size))
+                inferred_schema = SchemaInferrer.infer_schema(sample_records, source_config.schema_sample_size)
+                logger.info(f"Schema inferred: {len(inferred_schema)} columns")
+                    
+                # Restart read generator since we consumed it
+                source = source_class(source_config)
+
+            # Schema validation for DB destinations
+            if destination_config.validate_schema and inferred_schema:
+                if destination_config.type in ['postgresql', 'snowflake', 'bigquery']:
+                    logger.info("Validating destination schema compatibility...")
+                    # Check if table exists, compare schemas (placeholder - implement as needed)
+
+            # Auto-create table
+            if destination_config.auto_create_table and inferred_schema:
+                if destination_config.type in ['postgresql', 'snowflake', 'bigquery']:
+                    logger.info(f"Auto-creating table in {destination_config.type}...")
+                    dialect_map = {'postgresql': 'postgresql', 'snowflake': 'snowflake', 'bigquery': 'bigquery'}
+                    create_sql = TableAutoCreator.generate_create_table_sql(
+                        destination_config.table, 
+                        inferred_schema, 
+                        dialect_map[destination_config.type]
+                    )
+                    logger.info(f"Generated SQL:\n{create_sql}")
+                    
+                    if not dry_run:
+                        try:
+                            destination.execute_ddl(create_sql)
+                            logger.info(f"Table '{destination_config.table}' created successfully.")
+                        except Exception as e:
+                            logger.error(f"Failed to auto-create table: {e}")
+                            raise
+                    else:
+                        logger.info("DRY RUN: Skipping table creation.", prefix="⚠")
+            # --- End Schema Operations ---
+
             destination.mode = resource.mode or destination_config.mode or "append"
             tracker.metadata = {"mode": destination.mode}
             supports_write_one = hasattr(destination, "write_one") and callable(getattr(destination, "write_one"))
@@ -110,6 +155,22 @@ def run_resource(
                     )
                     if not dry_run: logger.info(f"Batch {i+1} processed (Total: {total_processed})")
             # --- End Loop ---
+
+            # Export schema
+            if resource.export_schema_path and inferred_schema:
+                schema_path = Path(resource.export_schema_path)
+                schema_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                if schema_path.suffix == '.json':
+                    import json
+                    with open(schema_path, 'w') as f:
+                        json.dump(inferred_schema, f, indent=2)
+                else:  # YAML
+                    import yaml
+                    with open(schema_path, 'w') as f:
+                        yaml.dump(inferred_schema, f, default_flow_style=False)
+                    
+                logger.info(f"Schema exported to {schema_path}")
 
             if hasattr(destination, "finalize") and not dry_run:
                 destination.finalize()

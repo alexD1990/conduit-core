@@ -72,6 +72,15 @@ class BigQueryDestination(BaseDestination):
                 f"BigQuery connection failed: {error_msg}\n\nSuggestions:\n{suggestion_str}"
             ) from e
 
+    def execute_ddl(self, sql: str) -> None:
+        try:
+            query_job = self.client.query(sql)
+            query_job.result()  # Wait for the DDL job to complete
+            logger.info("DDL executed successfully")
+        except Exception as e:
+            logger.error(f"BigQuery DDL execution failed: {e}")
+            raise
+
     def write(self, records: Iterable[Dict[str, Any]]):
         """Accumulates records in memory."""
         self.accumulated_records.extend(list(records))

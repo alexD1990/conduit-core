@@ -121,6 +121,17 @@ class PostgresDestination(BaseDestination):
         """Test PostgreSQL connection."""
         return _test_postgres_connection(self.connection_string, self.host, self.port, self.database)
 
+    def execute_ddl(self, sql: str) -> None:
+        import psycopg2
+        conn = psycopg2.connect(self.connection_string)
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(sql)
+            conn.commit()
+            logger.info("DDL executed successfully")
+        finally:
+            conn.close()
+
     def write(self, records: Iterable[Dict[str, Any]]):
         self.accumulated_records.extend(list(records))
 
