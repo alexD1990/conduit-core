@@ -6,15 +6,14 @@ import yaml
 from pathlib import Path
 from typer.testing import CliRunner
 from unittest.mock import patch, MagicMock
-import logging  # Import logging
-
+import logging # Import logging
 
 from conduit_core.cli import app as cli_app
 from conduit_core.config import IngestConfig, Source, Destination, Resource, SchemaEvolutionConfig
 from conduit_core.engine import run_resource
 from conduit_core.schema_evolution import SchemaEvolutionError
 from conduit_core.schema_store import SchemaStore
-
+from conduit_core.schema import ColumnDefinition # Import added
 
 # Fixture to create a dummy config
 @pytest.fixture
@@ -22,7 +21,7 @@ def base_config(tmp_path):
     """Provides a base config object and paths."""
     source_path = tmp_path / "source.csv"
     dest_path = tmp_path / "dest.json"
-    
+
     config = IngestConfig(
         sources=[
             Source(name="csv_source", type="csv", path=str(source_path)),
@@ -49,7 +48,7 @@ def base_config(tmp_path):
 def test_infer_schema_from_csv_source(base_config, tmp_path, caplog):
     """Test schema inference in full pipeline from a CSV with mixed types."""
     config, source_path, _ = base_config
-    
+
     # Setup: Create CSV with mixed types
     csv_content = (
         "id,name,rate,active,joined_date\n"
@@ -66,7 +65,7 @@ def test_infer_schema_from_csv_source(base_config, tmp_path, caplog):
 
     # Run the resource
     # run_resource(resource, config, dry_run=True) # Needs mock source/dest
-    
+
     # Assert schema was logged (placeholder until run implemented)
     # assert "Schema inferred: 5 columns" in caplog.text
     pass
@@ -102,10 +101,10 @@ def test_export_schema_json(base_config, tmp_path):
     source_config.infer_schema = True
 
     # TODO: Mock source.read() to return sample data
-    
+
     # Run the resource
     # run_resource(resource, config, dry_run=True)
-    
+
     # Assert file was created and contains valid JSON
     # assert export_path.exists()
     # with open(export_path, 'r') as f:
@@ -133,8 +132,7 @@ def test_export_schema_not_triggered_without_path(base_config, tmp_path):
 def test_auto_create_table_postgresql(base_config):
     """Verify DDL execution is called for PostgreSQL."""
     config, _, _ = base_config
-    
-    # Get PG resource and enable auto-create
+
     resource = next(r for r in config.resources if r.name == "pg_to_pg")
     source_config = next(s for s in config.sources if s.name == resource.source)
     dest_config = next(d for d in config.destinations if d.name == resource.destination)
@@ -144,30 +142,30 @@ def test_auto_create_table_postgresql(base_config):
     # 1. Mock the Source
     mock_source_class = MagicMock()
     mock_source_instance = mock_source_class.return_value
-    mock_source_instance.read.return_value = [
+    # *** FIX: Return an ITERATOR, not a list ***
+    mock_source_instance.read.return_value = iter([
         {'id': 1, 'name': 'Alice'},
         {'id': 2, 'name': 'Bob'}
-    ]
-    
+    ])
+    # *** FIX: Configure estimate_total_records mock ***
+    mock_source_instance.estimate_total_records.return_value = None # Simulate unknown total
+
     # 2. Mock the Destination
-    mock_ddl_method = MagicMock()  # This is the mock for the execute_ddl method
+    mock_ddl_method = MagicMock()
     mock_dest_class = MagicMock()
     mock_dest_instance = mock_dest_class.return_value
-    # *** IMPORTANT: Make sure the mock instance has the 'config' attribute ***
-    mock_dest_instance.config = dest_config # Use the actual dest config
-    mock_dest_instance.execute_ddl = mock_ddl_method  # Attach our method mock
+    mock_dest_instance.config = dest_config
+    mock_dest_instance.execute_ddl = mock_ddl_method
 
-
-    # 3. Patch *both* maps where they are used (in the engine)
+    # 3. Patch maps
     with patch('conduit_core.engine.get_source_connector_map', return_value={'postgresql': mock_source_class}), \
          patch('conduit_core.engine.get_destination_connector_map', return_value={'postgresql': mock_dest_class}):
-        
+
         run_resource(resource, config, dry_run=False)
 
-    # 4. Assert our new mock was called
+    # 4. Assert
     mock_ddl_method.assert_called_once()
     called_sql = mock_ddl_method.call_args[0][0]
-    # *** FIX: Assert based on quoted table name ***
     assert 'CREATE TABLE IF NOT EXISTS "test_table"' in called_sql
     assert '"id" INTEGER NOT NULL' in called_sql
     assert '"name" TEXT NOT NULL' in called_sql
@@ -208,13 +206,12 @@ def test_validate_schema_incompatible():
 def test_cli_schema_command(mock_read, tmp_path):
     """Test the 'conduit schema' CLI command."""
     runner = CliRunner()
-    
-    # Setup mock data and config file
-    mock_read.return_value = [
+
+    mock_read.return_value = iter([ # Return iterator
         {'id': 1, 'user': 'cli_user', 'value': 1.23},
         {'id': 2, 'user': 'test_user', 'value': 4.56}
-    ]
-    
+    ])
+
     config_content = """
 sources:
   - name: test_source
@@ -229,10 +226,9 @@ resources:
 """
     config_file = tmp_path / "ingest.yml"
     config_file.write_text(config_content)
-    
+
     output_file = tmp_path / "cli_schema.json"
 
-    # Run the CLI command
     result = runner.invoke(cli_app, [
         "schema",
         "--file", str(config_file),
@@ -240,18 +236,16 @@ resources:
         "test_resource"
     ])
 
-    # Check assertions
     assert result.exit_code == 0
     assert "Schema exported to" in result.stdout
     assert output_file.exists()
-    
+
     with open(output_file, 'r') as f:
         schema_data = json.load(f)
 
-    # *** FIX: Check new schema format ***
     assert "columns" in schema_data
     cols = {c['name']: c for c in schema_data['columns']}
-    
+
     assert "id" in cols
     assert cols["id"]["type"] == "integer"
     assert "user" in cols
@@ -263,7 +257,7 @@ resources:
 def test_cli_schema_invalid_resource(tmp_path):
     """Test error handling for the CLI schema command."""
     runner = CliRunner()
-    
+
     config_content = """
 sources:
   - name: test_source
@@ -279,13 +273,12 @@ resources:
     config_file = tmp_path / "ingest.yml"
     config_file.write_text(config_content)
 
-    # Run the CLI command with a non-existent resource
     result = runner.invoke(cli_app, [
         "schema",
         "--file", str(config_file),
         "non_existent_resource"
     ])
-    
+
     assert result.exit_code == 1
     assert "Resource 'non_existent_resource' not found" in result.stdout
 
