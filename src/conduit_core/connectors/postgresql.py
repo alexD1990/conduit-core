@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Iterable, Dict, Any
+from typing import Iterable, Dict, Any, Optional
 import psycopg2
 from psycopg2.extras import RealDictCursor, execute_batch
 from dotenv import load_dotenv
@@ -46,6 +46,7 @@ class PostgresSource(BaseSource):
     """Leser data fra PostgreSQL database."""
 
     def __init__(self, config: Any):
+        super().__init__(config)
         load_dotenv()
         is_pydantic_config = not isinstance(config, dict)
 
@@ -93,6 +94,7 @@ class PostgresDestination(BaseDestination):
     """Skriver data til PostgreSQL database."""
 
     def __init__(self, config: Any):
+        super().__init__(config)
         load_dotenv()
         is_pydantic_config = not isinstance(config, dict)
 
@@ -132,6 +134,72 @@ class PostgresDestination(BaseDestination):
         finally:
             conn.close()
 
+    def alter_table(self, alter_sql: str) -> None:
+        """Execute ALTER TABLE statement."""
+        self.execute_ddl(alter_sql)
+
+    def _map_pg_type_to_conduit(self, pg_type: str) -> str:
+        """Maps PostgreSQL data types to internal Conduit types."""
+        pg_type = pg_type.lower()
+        if pg_type in ('integer', 'bigint', 'smallint', 'serial', 'bigserial'):
+            return 'integer'
+        if pg_type in ('numeric', 'decimal', 'real', 'double precision'):
+            return 'float'
+        if pg_type in ('boolean', 'bool'):
+            return 'boolean'
+        if pg_type in ('date',):
+            return 'date'
+        if 'timestamp' in pg_type:
+            return 'timestamp'
+        if pg_type in ('json', 'jsonb'):
+            return 'json'
+        # Default for text-based types
+        if pg_type in ('character varying', 'varchar', 'text', 'char', 'bpchar'):
+            return 'string'
+        
+        logger.warning(f"Unmapped PostgreSQL type '{pg_type}', defaulting to 'string'.")
+        return 'string'
+
+    def get_table_schema(self) -> Optional[Dict[str, Any]]:
+        """Query information_schema for current table structure."""
+        conn = None
+        try:
+            conn = psycopg2.connect(self.connection_string)
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            
+            query = """
+            SELECT column_name, data_type, is_nullable
+            FROM information_schema.columns
+            WHERE table_schema = %s AND table_name = %s
+            ORDER BY ordinal_position;
+            """
+            
+            cursor.execute(query, (self.schema, self.table))
+            rows = cursor.fetchall()
+            
+            if not rows:
+                logger.warning(f"Table '{self.schema}.{self.table}' not found or has no columns.")
+                return None
+
+            columns = []
+            for row in rows:
+                columns.append({
+                    "name": row['column_name'],
+                    "type": self._map_pg_type_to_conduit(row['data_type']),
+                    "nullable": True if row['is_nullable'] == 'YES' else False
+                })
+            
+            return {"columns": columns}
+
+        except psycopg2.Error as e:
+            logger.error(f"Failed to get table schema for '{self.schema}.{self.table}': {e}")
+            if "relation" in str(e) and "does not exist" in str(e):
+                 return None # Table doesn't exist, which is fine
+            raise ConnectionError(f"Failed to get table schema: {e}") from e
+        finally:
+            if conn:
+                conn.close()
+
     def write(self, records: Iterable[Dict[str, Any]]):
         self.accumulated_records.extend(list(records))
 
@@ -153,7 +221,7 @@ class PostgresDestination(BaseDestination):
             
             columns = list(self.accumulated_records[0].keys())
             columns_str = ", ".join(f'"{c}"' for c in columns)
-            placeholders = ", ".join(["%s"] * len(columns))
+            placeholders = ", ".join(["%s"]* len(columns))
             insert_query = f"INSERT INTO {self.schema}.{self.table} ({columns_str}) VALUES ({placeholders})"
             data = [tuple(record.get(col) for col in columns) for record in self.accumulated_records]
             

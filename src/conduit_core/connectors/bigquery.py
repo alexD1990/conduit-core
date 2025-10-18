@@ -1,7 +1,7 @@
 # src/conduit_core/connectors/bigquery.py
 
 import logging
-from typing import Iterable, Dict, Any
+from typing import Iterable, Dict, Any, Optional
 
 from google.cloud import bigquery
 from google.oauth2 import service_account
@@ -18,6 +18,7 @@ class BigQueryDestination(BaseDestination):
     """Writes data to a Google BigQuery table using Load Jobs."""
 
     def __init__(self, config: DestinationConfig):
+        super().__init__(config)
         self.project_id = config.project
         self.dataset_id = config.dataset
         self.table_name = config.table
@@ -81,6 +82,50 @@ class BigQueryDestination(BaseDestination):
             logger.error(f"BigQuery DDL execution failed: {e}")
             raise
 
+    def alter_table(self, alter_sql: str) -> None:
+        """Execute ALTER TABLE statement."""
+        self.execute_ddl(alter_sql)
+
+    def _map_bq_type_to_conduit(self, bq_type: str) -> str:
+        """Maps BigQuery data types to internal Conduit types."""
+        bq_type = bq_type.upper()
+        if bq_type in ('INT64', 'INTEGER', 'SMALLINT', 'BIGINT', 'TINYINT', 'BYTEINT'):
+            return 'integer'
+        if bq_type in ('FLOAT64', 'NUMERIC', 'DECIMAL', 'BIGNUMERIC', 'BIGDECIMAL', 'FLOAT'):
+            return 'float'
+        if bq_type == 'BOOL':
+            return 'boolean'
+        if bq_type == 'DATE':
+            return 'date'
+        if bq_type in ('DATETIME', 'TIMESTAMP'):
+            return 'timestamp'
+        if bq_type in ('JSON', 'STRUCT', 'RECORD'):
+            return 'json'
+        # Default for STRING, BYTES, GEOGRAPHY, etc.
+        return 'string'
+
+    def get_table_schema(self) -> Optional[Dict[str, Any]]:
+        """Retrieves the current table schema from BigQuery."""
+        try:
+            table_ref = self.client.get_table(self.table_id)
+            
+            columns = []
+            for field in table_ref.schema:
+                columns.append({
+                    "name": field.name,
+                    "type": self._map_bq_type_to_conduit(field.field_type),
+                    "nullable": True if field.mode == 'NULLABLE' else False
+                })
+            
+            return {"columns": columns}
+
+        except NotFound:
+            logger.info(f"Table '{self.table_id}' not found, returning no schema.")
+            return None # Table doesn't exist, which is fine
+        except Exception as e:
+            logger.error(f"Failed to get table schema for '{self.table_id}': {e}")
+            raise ConnectionError(f"Failed to get table schema: {e}") from e
+
     def write(self, records: Iterable[Dict[str, Any]]):
         """Accumulates records in memory."""
         self.accumulated_records.extend(list(records))
@@ -115,7 +160,12 @@ class BigQueryDestination(BaseDestination):
             logger.info(f"✅ Successfully loaded {load_job.output_rows} rows to {self.table_id}")
 
         except NotFound:
-            raise ValueError(f"The BigQuery table '{self.table_id}' does not exist.") from None
+            # Check if auto_create_table was supposed to run but didn't
+            if self.config.auto_create_table:
+                 logger.error(f"Table '{self.table_id}' not found. 'auto_create_table' was enabled but failed or was skipped (e.g., no schema inferred).")
+                 raise ValueError(f"Table '{self.table_id}' not found. Auto-create failed or was skipped.")
+            else:
+                 raise ValueError(f"The BigQuery table '{self.table_id}' does not exist. Enable 'auto_create_table' in your destination config to create it.") from None
         except Exception as e:
             logger.error(f"❌ An unexpected error occurred during the BigQuery load job: {e}")
             raise

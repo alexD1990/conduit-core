@@ -6,6 +6,9 @@ from typing import Iterable, Dict, Any, Optional
 class BaseSource(ABC):
     """En 'kontrakt' for alle datakilde-konnektorer."""
 
+    def __init__(self, config: Any):
+        self.config = config
+
     @abstractmethod
     def read(self, query: str = None) -> Iterable[Dict[str, Any]]:
         """
@@ -38,6 +41,9 @@ class BaseSource(ABC):
 
 class BaseDestination(ABC):
     """En 'kontrakt' for alle destinasjons-konnektorer."""
+
+    def __init__(self, config: Any):
+        self.config = config
 
     @abstractmethod
     def write(self, records: Iterable[Dict[str, Any]]):
@@ -78,5 +84,13 @@ class BaseDestination(ABC):
         return True
 
     def execute_ddl(self, sql: str) -> None:
-        """Execute DDL statement (CREATE TABLE, ALTER, etc.). Override in DB connectors."""
+        """Execute DDL statement (CREATE TABLE, etc.). Override in DB connectors."""
         raise NotImplementedError(f"{self.__class__.__name__} does not support DDL execution")
+
+    def alter_table(self, alter_sql: str) -> None:
+        """Execute ALTER TABLE statement. Defaults to calling execute_ddl."""
+        self.execute_ddl(alter_sql)
+
+    def get_table_schema(self) -> Optional[Dict[str, Any]]:
+        """Query information_schema for current table structure. Override in DB connectors."""
+        raise NotImplementedError(f"{self.__class__.__name__} does not support get_table_schema")

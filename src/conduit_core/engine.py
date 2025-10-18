@@ -15,6 +15,8 @@ from rich.progress import (
 )
 import itertools
 from .schema import SchemaInferrer, TableAutoCreator
+from .schema_store import SchemaStore
+from .schema_evolution import SchemaEvolutionManager
 
 from .config import IngestConfig, Resource
 from .state import load_state, save_state
@@ -84,11 +86,42 @@ def run_resource(
                 logger.info("Inferring schema from source data...")
                 sample_records = list(itertools.islice(source.read(final_query), source_config.schema_sample_size))
                 inferred_schema = SchemaInferrer.infer_schema(sample_records, source_config.schema_sample_size)
-                logger.info(f"Schema inferred: {len(inferred_schema)} columns")
+                logger.info(f"Schema inferred: {len(inferred_schema['columns'])} columns")
                     
                 # Restart read generator since we consumed it
                 source = source_class(source_config)
 
+            # --- Schema Evolution ---
+            if (
+                destination_config.schema_evolution and
+                destination_config.schema_evolution.enabled and
+                inferred_schema and
+                destination_config.type in ['postgresql', 'snowflake', 'bigquery']
+            ):
+                schema_store = SchemaStore()
+                last_schema = schema_store.load_last_schema(resource.name)
+                    
+                if last_schema:
+                    evolution_mgr = SchemaEvolutionManager()
+                    changes = evolution_mgr.compare_schemas(last_schema, inferred_schema)
+                            
+                    if changes.has_changes():
+                        logger.warning(f"Schema changes detected: {changes.summary()}")
+                        if not dry_run:
+                            evolution_mgr.apply_evolution(
+                                destination, 
+                                destination_config.table,
+                                changes, 
+                                destination_config.schema_evolution
+                            )
+                        else:
+                            logger.info("DRY RUN: Skipping schema evolution.", prefix="⚠")
+                
+                if not dry_run:
+                    schema_store.save_schema(resource.name, inferred_schema)
+                else:
+                    logger.debug("DRY RUN: Skipping schema save.")
+            
             # Schema validation for DB destinations
             if destination_config.validate_schema and inferred_schema:
                 if destination_config.type in ['postgresql', 'snowflake', 'bigquery']:
