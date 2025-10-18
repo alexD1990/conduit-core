@@ -4,6 +4,7 @@ import logging
 import time
 import os
 import typer
+import itertools
 from pathlib import Path
 from typing import Optional
 from rich import print
@@ -100,6 +101,39 @@ def test(
     else:
         console.print("\n[red bold]❌ Some connections failed.[/red bold]")
         raise typer.Exit(code=1)
+
+@app.command()
+def schema(
+    config_file: Path = typer.Option("ingest.yml", "--file", "-f"),
+    resource_name: str = typer.Argument(..., help="Resource name to infer schema from"),
+    output: Path = typer.Option("schema.json", "--output", "-o"),
+    sample_size: int = typer.Option(100, "--sample-size"),
+):
+    """Infer and export schema from a source."""
+    from .schema import SchemaInferrer
+    from .connectors.registry import get_source_connector_map
+    import json
+    
+    console = Console()
+    config = load_config(config_file)
+    resource = next((r for r in config.resources if r.name == resource_name), None)
+    if not resource:
+        console.print(f"[red]Resource '{resource_name}' not found[/red]")
+        raise typer.Exit(1)
+        
+    source_config = next(s for s in config.sources if s.name == resource.source)
+    source_class = get_source_connector_map()[source_config.type]
+    source = source_class(source_config)
+        
+    console.print(f"Sampling {sample_size} records...")
+    records = list(itertools.islice(source.read(resource.query), sample_size))
+    schema = SchemaInferrer.infer_schema(records, sample_size)
+        
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with open(output, 'w') as f:
+        json.dump(schema, f, indent=2)
+        
+    console.print(f"[green]✓[/green] Schema exported to {output}")
 
 @app.command()
 def run(

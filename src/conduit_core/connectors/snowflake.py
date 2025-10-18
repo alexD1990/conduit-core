@@ -71,6 +71,27 @@ class SnowflakeDestination(BaseDestination):
                 f"Snowflake connection failed: {error_msg}\n\nSuggestions:\n{suggestion_str}"
             ) from e
 
+    def execute_ddl(self, sql: str) -> None:
+        conn = None
+        try:
+            conn = snowflake.connector.connect(
+                account=self.account,
+                user=self.user,
+                password=self.password,
+                warehouse=self.warehouse,
+                database=self.database,
+                schema=self.schema
+            )
+            cursor = conn.cursor()
+            cursor.execute(sql)
+            logger.info("DDL executed successfully")
+        except Exception as e:
+            logger.error(f"Snowflake DDL execution failed: {e}")
+            raise
+        finally:
+            if conn:
+                conn.close()
+
     def write(self, records: Iterable[Dict[str, Any]]):
         """Akkumulerer records."""
         self.accumulated_records.extend(list(records))

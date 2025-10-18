@@ -76,3 +76,7 @@ class BaseDestination(ABC):
         """
         # Default implementation - subclasses should override
         return True
+
+    def execute_ddl(self, sql: str) -> None:
+        """Execute DDL statement (CREATE TABLE, ALTER, etc.). Override in DB connectors."""
+        raise NotImplementedError(f"{self.__class__.__name__} does not support DDL execution")
