@@ -4,7 +4,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-from datetime import datetime, UTC  # <-- IMPORT UTC
+from datetime import datetime, UTC  # Use UTC consistently
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,6 @@ class SchemaStore:
                 # Use timestamp from old schema, or current time if missing
                 timestamp_str = old_schema_data.get(
                     'timestamp', 
-                    # *** FIX 3: Use datetime.now(UTC) ***
                     datetime.now(UTC).strftime('%Y%m%dT%H%M%S')
                 )
                 
@@ -70,7 +69,6 @@ class SchemaStore:
         # 2. Save the new schema as 'latest'
         try:
             schema_to_save = {
-                # *** FIX 3: Use datetime.now(UTC) ***
                 'timestamp': datetime.now(UTC).isoformat(),
                 'schema': schema
             }

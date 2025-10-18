@@ -1,19 +1,18 @@
 # tests/test_schema_integration.py
-
 import pytest
 import json
 import yaml
 from pathlib import Path
 from typer.testing import CliRunner
 from unittest.mock import patch, MagicMock
-import logging # Import logging
+import logging
 
 from conduit_core.cli import app as cli_app
 from conduit_core.config import IngestConfig, Source, Destination, Resource, SchemaEvolutionConfig
 from conduit_core.engine import run_resource
 from conduit_core.schema_evolution import SchemaEvolutionError
 from conduit_core.schema_store import SchemaStore
-from conduit_core.schema import ColumnDefinition # Import added
+from conduit_core.schema import ColumnDefinition
 
 # Fixture to create a dummy config
 @pytest.fixture
@@ -42,95 +41,54 @@ def base_config(tmp_path):
     )
     return config, source_path, dest_path
 
+
 # --- 1. Schema Inference in Pipeline ---
 
 @pytest.mark.skip(reason="TODO: Implement pipeline run with mock CSV")
 def test_infer_schema_from_csv_source(base_config, tmp_path, caplog):
-    """Test schema inference in full pipeline from a CSV with mixed types."""
-    config, source_path, _ = base_config
-
-    # Setup: Create CSV with mixed types
-    csv_content = (
-        "id,name,rate,active,joined_date\n"
-        "1,Alice,10.5,true,2023-01-01\n"
-        "2,Bob,20.0,false,2023-01-02\n"
-        "3,Charlie,,true,\n"
-    )
-    source_path.write_text(csv_content)
-
-    # Get resource and enable schema inference
-    resource = next(r for r in config.resources if r.name == "csv_to_json")
-    source_config = next(s for s in config.sources if s.name == resource.source)
-    source_config.infer_schema = True
-
-    # Run the resource
-    # run_resource(resource, config, dry_run=True) # Needs mock source/dest
-
-    # Assert schema was logged (placeholder until run implemented)
-    # assert "Schema inferred: 5 columns" in caplog.text
     pass
 
 
 @pytest.mark.skip(reason="TODO: Implement pipeline run with mock CSV")
 def test_infer_schema_with_nulls(base_config, caplog):
-    """Verify nullable detection during inference."""
     pass
+
 
 @pytest.mark.skip(reason="TODO: Implement pipeline run with mock CSV")
 def test_infer_schema_respects_sample_size(base_config, caplog):
-    """Test that the sample_size parameter is correctly used."""
     pass
+
 
 @pytest.mark.skip(reason="TODO: Implement pipeline run with mock CSV")
 def test_infer_schema_disabled_by_default(base_config, caplog):
-    """Ensure schema inference doesn't run unless infer_schema=True."""
     pass
+
 
 # --- 2. Schema Export ---
 
 @pytest.mark.skip(reason="TODO: Implement pipeline run with mock source")
 def test_export_schema_json(base_config, tmp_path):
-    """Test exporting the inferred schema to a .json file."""
-    config, _, _ = base_config
-    export_path = tmp_path / "exports" / "schema.json"
-
-    # Get resource, enable inference, and set export path
-    resource = next(r for r in config.resources if r.name == "csv_to_json")
-    resource.export_schema_path = str(export_path)
-    source_config = next(s for s in config.sources if s.name == resource.source)
-    source_config.infer_schema = True
-
-    # TODO: Mock source.read() to return sample data
-
-    # Run the resource
-    # run_resource(resource, config, dry_run=True)
-
-    # Assert file was created and contains valid JSON
-    # assert export_path.exists()
-    # with open(export_path, 'r') as f:
-    #     schema_data = json.load(f)
-    # assert "columns" in schema_data # Check new format
     pass
+
 
 @pytest.mark.skip(reason="TODO: Implement pipeline run with mock source")
 def test_export_schema_yaml(base_config, tmp_path):
-    """Test exporting the inferred schema to a .yml file."""
     pass
+
 
 @pytest.mark.skip(reason="TODO: Implement pipeline run with mock source")
 def test_export_schema_creates_directories(base_config, tmp_path):
-    """Test that nested parent directories for the export path are created."""
     pass
+
 
 @pytest.mark.skip(reason="TODO: Implement pipeline run with mock source")
 def test_export_schema_not_triggered_without_path(base_config, tmp_path):
-    """Ensure no schema file is exported if export_schema_path is not set."""
     pass
+
 
 # --- 3. Auto Create Table ---
 
 def test_auto_create_table_postgresql(base_config):
-    """Verify DDL execution is called for PostgreSQL."""
     config, _, _ = base_config
 
     resource = next(r for r in config.resources if r.name == "pg_to_pg")
@@ -139,75 +97,78 @@ def test_auto_create_table_postgresql(base_config):
     source_config.infer_schema = True
     dest_config.auto_create_table = True
 
-    # 1. Mock the Source
     mock_source_class = MagicMock()
     mock_source_instance = mock_source_class.return_value
-    # *** FIX: Return an ITERATOR, not a list ***
     mock_source_instance.read.return_value = iter([
         {'id': 1, 'name': 'Alice'},
         {'id': 2, 'name': 'Bob'}
     ])
-    # *** FIX: Configure estimate_total_records mock ***
-    mock_source_instance.estimate_total_records.return_value = None # Simulate unknown total
+    mock_source_instance.estimate_total_records.return_value = None
 
-    # 2. Mock the Destination
     mock_ddl_method = MagicMock()
     mock_dest_class = MagicMock()
     mock_dest_instance = mock_dest_class.return_value
     mock_dest_instance.config = dest_config
     mock_dest_instance.execute_ddl = mock_ddl_method
 
-    # 3. Patch maps
     with patch('conduit_core.engine.get_source_connector_map', return_value={'postgresql': mock_source_class}), \
          patch('conduit_core.engine.get_destination_connector_map', return_value={'postgresql': mock_dest_class}):
-
         run_resource(resource, config, dry_run=False)
 
-    # 4. Assert
     mock_ddl_method.assert_called_once()
     called_sql = mock_ddl_method.call_args[0][0]
     assert 'CREATE TABLE IF NOT EXISTS "test_table"' in called_sql
     assert '"id" INTEGER NOT NULL' in called_sql
     assert '"name" TEXT NOT NULL' in called_sql
 
+
 @pytest.mark.skip(reason="TODO: Implement mock and run")
 def test_auto_create_table_snowflake(base_config):
-    """Verify DDL execution is called for Snowflake."""
     pass
+
 
 @pytest.mark.skip(reason="TODO: Implement mock and run")
 def test_auto_create_table_bigquery(base_config):
-    """Verify DDL execution is called for BigQuery."""
     pass
+
 
 @pytest.mark.skip(reason="TODO: Implement mock and run")
 def test_auto_create_disabled_by_default(base_config, caplog):
-    """Ensures DDL is not run if auto_create_table=False."""
     pass
+
 
 @pytest.mark.skip(reason="TODO: Implement mock and run")
 def test_auto_create_only_for_db_destinations(base_config, caplog):
-    """DDL should be skipped for CSV/JSON/S3 destinations."""
     pass
 
-# --- 4. Schema Validation (optional for v1) ---
 
-@pytest.mark.skip(reason="TODO: Schema validation not yet implemented")
-def test_validate_schema_compatible():
+# --- 4. Schema Validation (Phase 3) ---
+
+@pytest.mark.skip(reason="TODO: Implement mock destination and run for schema validation success")
+def test_schema_validation_passes_when_types_match(base_config):
+    """Schema validation should pass when source and destination schemas are compatible."""
     pass
 
-@pytest.mark.skip(reason="TODO: Schema validation not yet implemented")
-def test_validate_schema_incompatible():
+
+@pytest.mark.skip(reason="TODO: Implement mock destination and run for schema validation type mismatch")
+def test_schema_validation_fails_on_type_mismatch(base_config):
+    """Schema validation should fail if a type mismatch is found."""
     pass
+
+
+@pytest.mark.skip(reason="TODO: Implement mock destination and run for missing required columns")
+def test_schema_validation_missing_required_columns(base_config):
+    """Schema validation should fail if required columns are missing in the source."""
+    pass
+
 
 # --- 5. CLI Schema Command ---
 
 @patch('conduit_core.connectors.csv.CsvSource.read')
 def test_cli_schema_command(mock_read, tmp_path):
-    """Test the 'conduit schema' CLI command."""
     runner = CliRunner()
 
-    mock_read.return_value = iter([ # Return iterator
+    mock_read.return_value = iter([
         {'id': 1, 'user': 'cli_user', 'value': 1.23},
         {'id': 2, 'user': 'test_user', 'value': 4.56}
     ])
@@ -255,7 +216,6 @@ resources:
 
 
 def test_cli_schema_invalid_resource(tmp_path):
-    """Test error handling for the CLI schema command."""
     runner = CliRunner()
 
     config_content = """
@@ -282,19 +242,19 @@ resources:
     assert result.exit_code == 1
     assert "Resource 'non_existent_resource' not found" in result.stdout
 
+
 # --- 6. Edge Cases ---
 
 @pytest.mark.skip(reason="TODO: Implement pipeline run with empty source")
 def test_schema_inference_empty_source(base_config, caplog):
-    """Handle empty data gracefully during inference."""
     pass
+
 
 @pytest.mark.skip(reason="TODO: Implement pipeline run with single record")
 def test_schema_inference_single_record(base_config, caplog):
-    """Test inference works with minimal data (1 record)."""
     pass
+
 
 @pytest.mark.skip(reason="TODO: Implement pipeline run with checkpoint logic")
 def test_infer_then_resume(base_config, caplog):
-    """Test compatibility of schema inference + checkpoint/resume."""
     pass
