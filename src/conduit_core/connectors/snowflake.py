@@ -4,7 +4,7 @@ import logging
 import os
 import tempfile
 import csv
-from typing import Iterable, Dict, Any
+from typing import Iterable, Dict, Any, Optional
 from pathlib import Path
 import snowflake.connector
 from snowflake.connector.errors import DatabaseError, ProgrammingError
@@ -22,6 +22,7 @@ class SnowflakeDestination(BaseDestination):
     """Skriver data til Snowflake data warehouse."""
 
     def __init__(self, config: DestinationConfig):
+        super().__init__(config)
         load_dotenv()
         
         self.account = config.account or os.getenv('SNOWFLAKE_ACCOUNT')
@@ -40,17 +41,21 @@ class SnowflakeDestination(BaseDestination):
         
         logger.info(f"SnowflakeDestination initialized: {self.database}.{self.schema}.{self.table} (mode: {self.mode})")
 
+    def _get_connection(self):
+        """Helper to create a new Snowflake connection."""
+        return snowflake.connector.connect(
+            account=self.account,
+            user=self.user,
+            password=self.password,
+            warehouse=self.warehouse,
+            database=self.database,
+            schema=self.schema
+        )
+
     def test_connection(self) -> bool:
         """Test Snowflake connection."""
         try:
-            conn = snowflake.connector.connect(
-                account=self.account,
-                user=self.user,
-                password=self.password,
-                warehouse=self.warehouse,
-                database=self.database,
-                schema=self.schema
-            )
+            conn = self._get_connection()
             conn.close()
             return True
         except snowflake.connector.errors.DatabaseError as e:
@@ -74,19 +79,79 @@ class SnowflakeDestination(BaseDestination):
     def execute_ddl(self, sql: str) -> None:
         conn = None
         try:
-            conn = snowflake.connector.connect(
-                account=self.account,
-                user=self.user,
-                password=self.password,
-                warehouse=self.warehouse,
-                database=self.database,
-                schema=self.schema
-            )
+            conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute(sql)
             logger.info("DDL executed successfully")
         except Exception as e:
             logger.error(f"Snowflake DDL execution failed: {e}")
+            raise
+        finally:
+            if conn:
+                conn.close()
+
+    def alter_table(self, alter_sql: str) -> None:
+        """Execute ALTER TABLE statement."""
+        self.execute_ddl(alter_sql)
+
+    def _map_snowflake_type_to_conduit(self, sf_type: str) -> str:
+        """Maps Snowflake data types to internal Conduit types."""
+        sf_type = sf_type.upper()
+        if sf_type.startswith('NUMBER'):
+            # NUMBER(38,0) is integer, NUMBER(10,2) is float
+            if ',' in sf_type:
+                scale = sf_type.split(',')[-1].replace(')', '')
+                if int(scale) > 0:
+                    return 'float'
+            return 'integer'
+        if sf_type in ('FLOAT', 'DOUBLE'):
+            return 'float'
+        if sf_type == 'BOOLEAN':
+            return 'boolean'
+        if sf_type == 'DATE':
+            return 'date'
+        if 'TIMESTAMP' in sf_type:
+            return 'timestamp'
+        if sf_type in ('VARIANT', 'OBJECT', 'ARRAY'):
+            return 'json'
+        # Default for text types (TEXT, STRING, VARCHAR, etc.)
+        return 'string'
+
+    def get_table_schema(self) -> Optional[Dict[str, Any]]:
+        """Query information_schema for current table structure."""
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor(snowflake.connector.cursor.DictCursor)
+            
+            # Must use quoted identifiers for DESCRIBE
+            query = f'DESCRIBE TABLE "{self.database}"."{self.schema}"."{self.table}"'
+            
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            
+            if not rows:
+                logger.warning(f"Table '{self.table}' not found or has no columns.")
+                return None
+
+            columns = []
+            for row in rows:
+                columns.append({
+                    "name": row['name'],
+                    "type": self._map_snowflake_type_to_conduit(row['type']),
+                    "nullable": True if row['null?'] == 'Y' else False
+                })
+            
+            return {"columns": columns}
+
+        except ProgrammingError as e:
+            if "does not exist" in str(e):
+                logger.info(f"Table '{self.table}' does not exist, returning no schema.")
+                return None # Table doesn't exist, which is fine
+            logger.error(f"Failed to get table schema for '{self.table}': {e}")
+            raise ConnectionError(f"Failed to get table schema: {e}") from e
+        except Exception as e:
+            logger.error(f"An unexpected error occurred getting schema for '{self.table}': {e}")
             raise
         finally:
             if conn:
@@ -122,10 +187,7 @@ class SnowflakeDestination(BaseDestination):
         temp_csv_path = None
         
         try:
-            conn = snowflake.connector.connect(
-                account=self.account, user=self.user, password=self.password,
-                warehouse=self.warehouse, database=self.database, schema=self.schema
-            )
+            conn = self._get_connection()
             cursor = conn.cursor()
             
             columns = list(self.accumulated_records[0].keys())

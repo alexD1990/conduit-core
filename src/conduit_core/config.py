@@ -26,6 +26,14 @@ class Source(BaseModel):
     schema_sample_size: int = 100
 
 
+class SchemaEvolutionConfig(BaseModel):
+    enabled: bool = False
+    mode: str = "manual"
+    on_new_column: str = "add_nullable"
+    on_removed_column: str = "ignore"
+    on_type_change: str = "fail"
+
+
 class Destination(BaseModel):
     name: str
     type: str
@@ -61,6 +69,9 @@ class Destination(BaseModel):
     # Schema fields
     auto_create_table: bool = False
     validate_schema: bool = False
+
+    # Schema evolution
+    schema_evolution: Optional[SchemaEvolutionConfig] = None
 
 
 class Resource(BaseModel):
