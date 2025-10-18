@@ -3,6 +3,9 @@
 from typing import Optional, List
 from pydantic import BaseModel
 
+# Import QualityCheck from the new quality module
+from .quality import QualityCheck
+
 
 class Source(BaseModel):
     name: str
@@ -82,6 +85,9 @@ class Resource(BaseModel):
     incremental_column: Optional[str] = None
     mode: Optional[str] = None
     export_schema_path: Optional[str] = None  # e.g. "./schemas/users.json"
+    
+    # Data Quality
+    quality_checks: Optional[List[QualityCheck]] = None
 
 
 class IngestConfig(BaseModel):
