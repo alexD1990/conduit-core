@@ -1,4 +1,5 @@
-# Conduit Core CLI — Reference Guide
+# Conduit Core CLI Reference
+The Conduit Core CLI provides declarative control for running, validating, and inspecting data ingestion pipelines.
 ## Overview
 
 The **Conduit Core CLI** is your command-line interface for running, validating, and managing data pipelines.
@@ -7,7 +8,7 @@ It’s designed for **data engineers** and **platform teams** who want declarati
 Each command supports ```--file``` (path to ```ingest.yml```) and ```--help``` for inline assistance.
 
 ## Quick Start
-```bash
+```text
 # View available commands
 conduit --help
 
@@ -19,7 +20,7 @@ conduit run my_resource --file ingest.yml
 ```
 
 ## Example Help Output
-```sql
+```text
 Usage: conduit [OPTIONS] COMMAND [ARGS]...
 
 Conduit Core CLI
@@ -35,20 +36,21 @@ Commands:
 ## ```conduit run```
 ### Description
 
-Executes a full data pipeline defined in ```ingest.yml``` for a given resource.
-```bash
+Executes a specific resource defined in ```ingest.yml```.
+Validates connections and schema before loading data.
+```text
 conduit run my_resource --file ingest.yml
 ```
 ### Options
 | Option         | Description                         | Default      |
 | -------------- | ----------------------------------- | ------------ |
 | `--file`, `-f` | Path to `ingest.yml`                | `ingest.yml` |
-| `--parallel`   | Run multiple resources concurrently | `False`      |
+| `--batch-size` | Records per batch                   | `1000`       |
 | `--dry-run`    | Show actions without executing      | `False`      |
-| `--limit`      | Limit number of records to extract  | `None`       |
+| `--no-progress`| Disable progress bars               | `False`      |
 
 ### Example Output
-```yaml
+```text
  Running pipeline: users_to_pg
  Extracted 1000 records from CSV
  Loaded 1000 records into PostgreSQL
@@ -57,29 +59,26 @@ conduit run my_resource --file ingest.yml
 ```
 
 ## Exit Codes
-| Code | Meaning          |
-| ---- | ---------------- |
-| 0    | Success          |
-| 1    | Pipeline failure |
-| 2    | Config error     |
+| Code | Meaning                    |      
+| ---- | ---------------------------|
+| 0    | Success                    |
+| 1    | Pipeline failure           |
+| 2    | Config or connection error |
 
 ## ```conduit validate```
 ### Description
 
 Performs **pre-flight validation** without executing the pipeline.
 Checks configuration, connections, schema, and data quality rules.
-```bash
+```text
 conduit validate my_resource --file ingest.yml
 ```
 | Option                 | Description                  | Default      |
 | ---------------------- | ---------------------------- | ------------ |
 | `--file`, `-f`         | Path to config file          | `ingest.yml` |
-| `--sample-size`        | Number of records to sample  | `100`        |
-| `--strict/--no-strict` | Treat warnings as errors     | `--strict`   |
-| `resource_name`        | Name of resource to validate | *(required)* |
 
 ### Example Output
-```sql
+```text
  Conduit Pre-Flight Validation
 
 ✓ Configuration loaded successfully
@@ -103,8 +102,8 @@ conduit validate my_resource --file ingest.yml
 ### Description
 
 Infers a source schema from sampled records and exports it to a file.
-```bash
-conduit schema my_resource --file ingest.yml --output schema.json
+```text
+conduit schema RESOURCE_NAME --file ingest.yml --output schema.json
 ```
 ### Options
 | Option            | Description                      | Default       |
@@ -116,13 +115,13 @@ conduit schema my_resource --file ingest.yml --output schema.json
 | `--verbose`, `-v` | Show detailed schema info        | `False`       |
 
 ### Example Output
-```css
+```text
 Sampling 100 records from csv_source...
 ✓ Schema exported to schema.json
   12 columns, 100 sample records
 ```
 ### Example Verbose Output
-```sql
+```text
 Schema for users_to_pg
 ┏━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
 ┃ Column   ┃ Type      ┃ Nullable  ┃ Samples      ┃
@@ -137,8 +136,8 @@ Schema for users_to_pg
 ### Description
 
 Compares the current inferred schema against a **baseline** (previous run or JSON file).
-```bash
-conduit schema-compare my_resource --file ingest.yml
+```text
+conduit schema-compare RESOURCE_NAME --file ingest.yml
 ```
 | Option             | Description            | Default      |
 | ------------------ | ---------------------- | ------------ |
@@ -147,7 +146,7 @@ conduit schema-compare my_resource --file ingest.yml
 | `--sample-size`    | Records to sample      | `100`        |
 
 ### Example Output
-```sql
+```text
  Schema Comparison
 
  ADDED: signup_date (DATE)
@@ -168,17 +167,19 @@ Summary:
 ### Description
 
 Displays the **pipeline manifest**, a historical log of past runs including timing, record counts, and statuses.
-```bash
+```text
 conduit manifest --manifest-path manifest.json
 ```
 | Option            | Description           | Default         |
 | ----------------- | --------------------- | --------------- |
-| `--manifest-path` | Path to manifest file | `manifest.json` |
+| `--manifest-path` | Path to manifest file | `.conduit/manifest.json` |
 | `--failed`        | Show only failed runs | `False`         |
 | `--pipeline-name` | Filter by pipeline    | `None`          |
 
+The manifest file tracks metadata for every pipeline run — including record counts, duration, and status.
+
 ### Example Output
-```yaml
+```text
  Pipeline Manifest
 
 ┏━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━┓
@@ -192,7 +193,7 @@ conduit manifest --manifest-path manifest.json
 ### Manifest Storage
 
 By default, manifest data is written to:
-```bash
+```text
 .conduit/manifest.json
 ```
 Each entry includes:
@@ -209,10 +210,11 @@ Each entry includes:
 ```
 
 ## Developer Notes
+Logs are written both to stdout and the manifest for audit consistency.
 ### Logging
 
 All commands honor the ```LOG_LEVEL``` environment variable (```DEBUG```, ```INFO```, ```WARNING```, ```ERROR```).
-```bash
+```text
 export LOG_LEVEL=DEBUG
 conduit validate my_resource
 ```
@@ -231,8 +233,9 @@ conduit validate my_resource
 * Combine ```schema```, ```validate```, and ```run``` for a full pre-flight → execute cycle.
 
 ## See Also
+This document reflects the Conduit Core v1.0 CLI. Future versions may expand functionality (e.g., parallel execution, advanced schema diffing).
 
-* Schema Validation
-* Schema Evolution
-* Data Quality
-* README.md
+- [Schema Validation](schema-validation.md)
+- [Schema Evolution](schema-evolution.md)
+- [Data Quality](data-quality.md)
+- [README](../README.md)

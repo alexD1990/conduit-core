@@ -1,4 +1,4 @@
-# Conduit Core Features (v1.2.0)
+# Conduit Core Features (v1.0)
 
 This document details the core features available in Conduit Core.
 
@@ -22,6 +22,15 @@ Conduit Core supports reading from and writing to a variety of sources and desti
 * **Snowflake:** Loads data efficiently into Snowflake using staged loads (`PUT` + `COPY INTO`). Supports `full_refresh` and `append` modes.
 * **BigQuery:** Loads data into Google BigQuery using the Load Jobs API for scalability. Supports `full_refresh` (`WRITE_TRUNCATE`) and `append` (`WRITE_APPEND`) modes. Auto-detects schema.
 
+### Testing Connectors
+
+Conduit Core includes lightweight connectors for local testing and validation:
+
+- **DummySource** – Generates small dummy datasets (e.g. `[{"id": 1}, {"id": 2}, {"id": 3}]`).
+- **DummyDestination** – In-memory sink that stores written records for inspection.
+
+These are useful for validating pipelines without connecting to real databases or files.
+
 ## Core Reliability Features
 
 Designed to handle failures gracefully and ensure data integrity.
@@ -29,8 +38,11 @@ Designed to handle failures gracefully and ensure data integrity.
 * **Atomic Operations:** File writes use a temp file → rename pattern, ensuring the final file is always complete. Database writes use transactions.
 * **Retry Logic:** Automatically retries operations (like database connections or S3 uploads) with exponential backoff on transient network errors. (Default: 3 attempts).
 * **Dead Letter Queue (DLQ):** Records that fail during processing (e.g., due to data type issues, validation errors) are automatically saved to `./errors/` as JSON files, including the original record and the error message. The pipeline continues processing valid records.
-* **Checkpoint/Resume:** For long-running jobs, Conduit Core saves progress periodically. If a run fails, the next run can automatically resume from the last successful checkpoint, avoiding reprocessing large amounts of data.
-* **Connection Validation:** The `conduit test` command verifies connections to all configured sources and destinations before a pipeline starts, providing immediate feedback and helpful suggestions for common errors.
+* **Checkpoint/Resume:** For long-running jobs, Conduit Core saves progress periodically. If a run fails, the next run automatically resumes from the last successful checkpoint. 
+  Checkpoints are stored under `.checkpoints/`. To force a full rerun, delete them manually:
+```text
+  rm -rf .checkpoints/
+```
 
 ## Pipeline Management & Execution
 
@@ -38,7 +50,9 @@ Designed to handle failures gracefully and ensure data integrity.
 * **Two Write Modes:**
     * `append`: Adds new records to the destination (default).
     * `full_refresh`: Deletes all existing data in the destination (e.g., `TRUNCATE` table, overwrite file) before inserting new data.
-* **Incremental Loading:** Process only new records from sources using the `incremental_column` setting in `resources` and the `:last_value` placeholder in your source `query`. State is managed automatically in `.conduit_state.json`.
+* **Incremental Loading:** Process only new records using the `incremental_column` setting in each resource. 
+  The engine automatically appends `WHERE <column> > <last_value>` when a previous state exists. 
+  You do **not** need to use any placeholders manually. State is persisted automatically in `.conduit_state.json`.
 * **Batch Processing:** Data is read, processed, and written in batches (default: 1000 records, configurable via `--batch-size`) for memory efficiency.
 * **Streaming Architecture:** Data flows through the pipeline without loading entire datasets into memory.
 
@@ -50,3 +64,7 @@ Designed to handle failures gracefully and ensure data integrity.
 * **Helpful Error Messages:** Connection errors provide specific suggestions for common problems (credentials, permissions, typos, firewall rules).
 * **Pydantic Validation:** `ingest.yml` is validated on load, catching configuration errors early with clear messages.
 * **Environment Variable Support:** Securely manage credentials (like database passwords, API keys) using a `.env` file or system environment variables.
+
+---
+This document describes features available in Conduit Core v1.0. 
+Incremental Sync and CDC will be introduced in v1.2.

@@ -1,4 +1,7 @@
-# Data Quality Validation — Conduit Core
+# Data Quality — Conduit Core
+
+Conduit Core includes a built-in data quality framework that validates records during ingestion.
+It lets you define column-level rules directly in your `ingest.yml` and choose how violations are handled.
 
 ## Overview
 
@@ -10,11 +13,12 @@ The framework runs automated checks on source data before writing to destination
 * Enforce **business constraints** (e.g., no null IDs, valid email formats)
 * Prevent **bad data propagation**
 * Automatically route invalid rows to a **Dead-Letter Queue (DLQ)**
-* Either **fail**, **warn**, or **quarantine** records depending on your configuration
+* Either **fail**, **warn**, or send records to the **DLQ**.
 
 ## Configuration
+
 ```yaml
-Each resource in your ingest.yml can specify a list of quality checks.
+# Each resource in your ingest.yml can specify a list of quality checks.
 resources:
   - name: users_to_postgres
     source: csv_source
@@ -23,18 +27,18 @@ resources:
     quality_checks:
       - name: not_null_id
         column: id
-        rule: not_null
+        check: not_null
         action: fail
 
       - name: positive_age
         column: age
-        rule: greater_than
+        check: greater_than
         value: 0
         action: dlq
 
       - name: valid_email
         column: email
-        rule: regex
+        check: regex
         pattern: "^[^@]+@[^@]+\\.[^@]+$"
         action: warn
 ```
@@ -44,14 +48,14 @@ resources:
 | --------- | ------------------------------------------- | ------------------- |
 | `name`    | Unique identifier for the check             | `valid_email`       |
 | `column`  | Column to apply the check to                | `email`             |
-| `rule`    | Built-in or custom rule type                | `regex`, `not_null` |
-| `value`   | Rule threshold (for numeric checks)         | `0`                 |
+| `check`   | Built-in or custom check type               | `regex`, `not_null` |
+| `value`   | Check threshold (for numeric checks)        | `0`                 |
 | `pattern` | Regex pattern (for string checks)           | `"^[A-Z]+$"`        |
 | `action`  | Behavior on failure (`fail`, `warn`, `dlq`) | `fail`              |
 
-## Built-in Validators
+## Built-in Checks
 
-Conduit Core ships with a set of **standard validators** for common quality rules.
+Conduit Core ships with a set of **standard checks** for common quality rules.
 | Rule           | Description                                      | Parameters   | Example                         |
 | -------------- | ------------------------------------------------ | ------------ | ------------------------------- |
 | `not_null`     | Fails if the value is null                       | —            | —                               |
@@ -63,15 +67,15 @@ Conduit Core ships with a set of **standard validators** for common quality rule
 | `unique`       | Column must have unique values in batch          | —            | —                               |
 | `not_in_list`  | Value must *not* be in forbidden values          | `forbidden`  | `not_in_list: ["error", "n/a"]` |
 
-## Custom Validators
+## Custom Checks
 
 You can register custom validation logic by subclassing ```QualityValidator``` or by defining inline lambdas.
 
 ### Example: Custom Python Validator
-
+```python
 # custom_validators.py
 from conduit_core.quality import register_validator
-```python
+
 @register_validator("is_weekday")
 def is_weekday(value):
     from datetime import datetime
@@ -82,11 +86,11 @@ def is_weekday(value):
 ```
 
 Then in ```ingest.yml:```
-```yaml
+```text
 quality_checks:
   - name: weekday_check
     column: signup_date
-    rule: is_weekday
+    check: is_weekday
     action: warn
 ```
 This modular design allows teams to share reusable validation logic across projects.
@@ -100,6 +104,10 @@ Each check defines an action determining how the pipeline reacts when a record f
 | `warn` | Logs a warning and continues                 | Visible in logs and manifest                        |
 | `dlq`  | Sends failed record to **Dead-Letter Queue** | Record logged in `/errors/<resource>_errors_*.json` |
 
+> **Note:**  
+> The `unique` check validates uniqueness *within each batch*.  
+> For global uniqueness across the full dataset, rely on database constraints.
+
 ### Example DLQ output:
 ```json
 {
@@ -112,6 +120,7 @@ Each check defines an action determining how the pipeline reacts when a record f
 }
 ```
 ## Running Quality Checks
+
 ### CLI Pre-Flight Validation
 
 Run quality checks on sample data without executing the pipeline:
@@ -119,7 +128,7 @@ Run quality checks on sample data without executing the pipeline:
 conduit validate users_to_postgres --file ingest.yml
 ```
 **Output:**
-```sql
+```text
  Conduit Pre-Flight Validation
 
 ✓ Configuration loaded successfully
@@ -145,13 +154,13 @@ If ```action=dlq```, failed records will be logged and excluded from the load.
 
  Use ```dlq``` for data you might fix later (e.g., partially corrupted CSVs).
 
- Group reusable rules in a ```validators.py``` module.
+ Group reusable rules in a ```quality.py``` module.
 
  Always run ```conduit validate``` before scheduled jobs to catch schema/quality drift.
 
  Combine with schema validation for complete data reliability.
 
- | Symptom                                 | Likely Cause                         | Fix                                    |
+| Symptom                                 | Likely Cause                         | Fix                                    |
 | --------------------------------------- | ------------------------------------ | -------------------------------------- |
 | All rows fail a numeric rule            | Incorrect value type (string vs int) | Cast upstream or adjust rule threshold |
 | Regex rule never matches                | Missing `^` and `$` anchors          | Ensure pattern is anchored             |
@@ -161,7 +170,7 @@ If ```action=dlq```, failed records will be logged and excluded from the load.
 
 ## Examples
 ### Example 1: Customer Data CSV → PostgreSQL
-```yaml
+```text
 resources:
   - name: customers_to_pg
     source: csv_source
@@ -170,36 +179,36 @@ resources:
     quality_checks:
       - name: id_not_null
         column: id
-        rule: not_null
+        check: not_null
         action: fail
       - name: valid_email
         column: email
-        rule: regex
+        check: regex
         pattern: "^[^@]+@[^@]+\\.[^@]+$"
         action: dlq
 ```
 
 ## Example 2: JSON API → BigQuery with Soft Rules
-```yaml
+```text
 quality_checks:
   - name: country_code
     column: country
-    rule: in_list
+    check: in_list
     allowed: ["NO", "SE", "DK"]
     action: warn
   - name: positive_amount
     column: amount
-    rule: greater_than
+    check: greater_than
     value: 0
     action: fail
 ```
 
 ## See Also
+- [Schema Validation](schema-validation.md)
+- [Schema Evolution](schema-evolution.md)
+- [CLI Reference](cli-reference.md)
+- [README](../README.md)
 
-Schema Validation
-
-Schema Evolution
-
-CLI Reference
-
-README.md
+---
+This document describes the data quality framework in Conduit Core v1.0.  
+Future versions (v1.2+) will add row-level lineage and DLQ replay capabilities.

@@ -1,9 +1,8 @@
 # Conduit Core Roadmap
+This document outlines completed and planned features for Conduit Core.
 
-This document outlines the planned features and direction for future Conduit Core versions.
-
-## v1.0 – Data Quality, Schema Validation & Evolution (Current Release)
-Status: Complete — 173 passing tests, 0 warnings
+## v1.0 — Core Stability & Data Integrity (Current)
+Status: Released (Current)
 Focus: Reliability, schema intelligence, and pre-flight validation
 
 ### Key Features Delivered
@@ -16,23 +15,25 @@ Detects missing, extra, or type-mismatched columns before execution.
 Detects schema drift (added/removed/changed columns).
 Supports configurable strategies:
 
-* ```auto``` → auto-add compatible columns
-* ```warn``` → log warning but continue
-* ```fail``` → stop on incompatible change
+* `auto` → apply compatible changes (e.g., add nullable columns)
+* `manual` → log diffs and generate SQL, do not apply automatically
+* `warn` → log warnings, proceed without applying DDL
 
 * **Data Quality Framework:**
 Define column-level rules directly in YAML:
 ```yaml
 quality_checks:
   - column: email
-    rule: regex
+    check: regex
     pattern: "^[^@]+@[^@]+$"
+    action: warn
   - column: id
-    rule: unique
+    check: unique
+    action: fail
 ```
 
-Built-in validators: ```not_null```, ```unique```, ```regex```, ```range```, ```allowed_values```.
-Configurable outcomes: ```fail```, ```warn```, or ```dlq```.
+Built-in checks: `not_null`, `unique`, `regex`, `range`, `in_list` (and related variants).
+Configurable actions: `fail`, `warn`, `dlq`.
 
 * **Enhanced CLI Suite:**
     * ```conduit validate``` → Pre-flight validation (config, schema, quality).
@@ -43,7 +44,7 @@ Configurable outcomes: ```fail```, ```warn```, or ```dlq```.
 Expanded pipeline manifest with structured metadata.
 Consistent exit codes for automation and CI/CD use.
 
-## v1.2 Advanced Sync Strategies & Observability
+## v1.2 — Incremental & Cloud Readiness
 
 Focus: Incremental loading, CDC, deeper monitoring, and integration with orchestration tools.
 
@@ -66,11 +67,11 @@ Timestamp and high-watermark-based incremental extraction.
 Export metrics (records processed, duration, throughput)
 to Prometheus or structured JSON logs.
 
-* **dbt Integration (Phase 1):**
-Run dbt build automatically after successful pipelines.
-Pass updated tables context to dbt via manifest handoff.
+* **dbt Integration (Exploration):**
+  - Optionally trigger `dbt build` after successful pipelines.
+  - Pass updated tables context to dbt via manifest handoff.
 
-## v1.3 – Integrations & Ecosystem Expansion
+## v1.3 — Enterprise & Observability
 
 **Focus:** Interoperability, orchestration, and monitoring.
 
@@ -127,13 +128,17 @@ Micro-batched ingestion from Kafka/Kinesis with checkpointed commits.
 Runtime suggestions for optimal batch sizes and parallelism.
 
 ## Version Summary
-| Version  | Focus                                                    | Status            |
-| -------- | -------------------------------------------------------- | ----------------- |
-| **v1.0** | Foundational Release — Reliability, Schema, Data Quality | Current           |
-| **v1.1** | Incremental Loading, CDC                                 | In Development    |
-| **v1.2** | Observability & Integrations                             | Planned           |
-| **v1.3** | Connector Expansion                                      | Planned           |
-| **v1.4** | Scaling & Conduit Cloud                                  | Future Vision     |
+| Version  | Focus                                      | Status         |
+|----------|--------------------------------------------|----------------|
+| **v1.0** | Core Stability & Data Integrity            | Current        |
+| **v1.2** | Incremental & Cloud Readiness              | Planned        |
+| **v1.3** | Enterprise & Observability                 | Planned        |
+| **v1.4** | Connectors Expansion                       | Future Vision  |
+
+---
+Conduit Core follows semantic versioning. Minor versions (v1.x) add functionality without breaking changes.  
+Major versions (v2.x) may include API updates.
+
 
 
 
