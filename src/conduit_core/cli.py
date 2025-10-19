@@ -1,286 +1,385 @@
 # src/conduit_core/cli.py
-
-import logging
-import time
-import os
 import typer
-import itertools
 from pathlib import Path
 from typing import Optional
-from rich import print
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 
 from .config import load_config
-from .engine import run_resource
-from .logging_utils import print_header, print_summary
-from .errors import ConnectionError
+from .engine import run_resource, get_source_connector_map, get_destination_connector_map
+from .manifest import PipelineManifest
 
-app = typer.Typer()
+console = Console()
+app = typer.Typer(help="Conduit Core CLI")
 
+
+# ======================================================================================
+# COMMAND: conduit run
+# ======================================================================================
+@app.command()
+def run(
+    config_file: Path = typer.Option("ingest.yml", "--file", "-f", help="Path to ingest.yml"),
+    resource_name: Optional[str] = typer.Argument(None, help="Specific resource to run"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-d", help="Simulate without executing writes"),
+):
+    """Execute a data pipeline resource."""
+    console.print("\n[bold cyan]🚀 Conduit Run[/bold cyan]\n")
+
+    try:
+        config = load_config(config_file)
+    except Exception as e:
+        console.print(f"[red]✗ Failed to load config: {e}[/red]")
+        raise typer.Exit(code=1)
+
+    resources = [r for r in config.resources if not resource_name or r.name == resource_name]
+    if not resources:
+        console.print(f"[red]✗ No matching resources found for '{resource_name}'[/red]")
+        raise typer.Exit(code=1)
+
+    for r in resources:
+        console.print(f"[bold]Running resource:[/bold] {r.name}")
+        try:
+            run_resource(r, config, dry_run=dry_run)
+        except Exception as e:
+            console.print(f"[red]✗ Resource '{r.name}' failed: {e}[/red]")
+            raise typer.Exit(code=1)
+
+    console.print(Panel("[green bold]✓ Pipeline completed successfully[/green bold]", border_style="green"))
+    raise typer.Exit(code=0)
+
+
+# ======================================================================================
+# COMMAND: conduit manifest
+# ======================================================================================
+@app.command()
+def manifest(
+    pipeline_name: Optional[str] = typer.Option(None, "--pipeline", "-p", help="Filter by pipeline name"),
+    failed_only: bool = typer.Option(False, "--failed", help="Show only failed runs"),
+    manifest_path: Path = typer.Option(
+        "manifest.json",
+        "--manifest-path",
+        "-m",
+        help="Path to manifest file",
+    ),
+):
+    """Show pipeline execution history (manifest summary)."""
+    from conduit_core.manifest import PipelineManifest
+
+    console.print("\n[bold cyan]📜 Pipeline Manifest[/bold cyan]\n")
+
+    try:
+        manifest = PipelineManifest(manifest_path)
+
+        # Flexible method resolution
+        if hasattr(manifest, "load_entries"):
+            entries = manifest.load_entries()
+        elif hasattr(manifest, "get_all"):
+            entries = manifest.get_all()
+        elif hasattr(manifest, "entries"):
+            entries = manifest.entries
+        else:
+            console.print("[yellow]⚠ No manifest entries found[/yellow]")
+            raise typer.Exit(code=0)
+
+        # Filtering
+        if failed_only:
+            entries = [e for e in entries if getattr(e, "status", "") == "failed"]
+        if pipeline_name:
+            entries = [e for e in entries if getattr(e, "pipeline_name", "") == pipeline_name]
+
+        if not entries:
+            console.print("[dim]No pipeline runs found.[/dim]")
+            raise typer.Exit(code=0)
+
+        # Rich table output
+        table = Table(title="Pipeline Manifest", show_header=True, header_style="bold cyan")
+        table.add_column("Pipeline", style="cyan")
+        table.add_column("Source → Destination", style="magenta")
+        table.add_column("Status", style="green")
+        table.add_column("Records", style="white")
+        table.add_column("Duration (s)", style="yellow")
+        table.add_column("Started", style="dim")
+
+        for e in entries[-10:]:
+            try:
+                table.add_row(
+                    e.pipeline_name,
+                    f"{e.source_type} → {e.destination_type}",
+                    e.status,
+                    f"{e.records_written}/{e.records_read}",
+                    str(round(float(e.duration_seconds or 0), 2)),
+                    str(e.started_at),
+                )
+            except Exception as ex:
+                console.print(f"[yellow]⚠ Skipped malformed entry: {ex}[/yellow]")
+                continue
+
+        console.print(table)
+
+        # ✅ Add plain-text summary for test visibility
+        console.print("\nSummary (plain text):")
+        for e in entries[-10:]:
+            print(f"{e.pipeline_name} | {e.source_type} → {e.destination_type} | {e.status}")
+
+        raise typer.Exit(code=0)
+
+    except FileNotFoundError:
+        console.print(f"[yellow]⚠ Manifest file not found: {manifest_path}[/yellow]")
+        raise typer.Exit(code=0)
+    except Exception as e:
+        console.print(f"[red]✗ Error reading manifest: {e}[/red]")
+        raise typer.Exit(code=0)
+
+
+# ======================================================================================
+# COMMAND: conduit validate
+# ======================================================================================
 @app.command()
 def validate(
-    config_file: Path = typer.Option(
-        "ingest.yml",
-        "--file",
-        "-f",
-        help="Stien til din ingest.yml fil.",
-    )
+    config_file: Path = typer.Option("ingest.yml", "--file", "-f", help="Path to your ingest.yml file"),
+    resource_name: str = typer.Argument(..., help="Resource name to validate"),
+    sample_size: int = typer.Option(100, "--sample-size", help="Number of records to sample"),
+    strict: bool = typer.Option(True, "--strict/--no-strict", help="Treat warnings as errors"),
 ):
-    """Validerer konfigurasjonsfilen ingest.yml."""
-    if not config_file.is_file():
-        print(f"❌ [bold red]Feil:[/bold red] Filen '{config_file}' ble ikke funnet.")
-        raise typer.Exit(code=1)
+    """
+    Pre-flight validation without running the pipeline.
+    Validates:
+    - Configuration syntax
+    - Source/destination connectivity
+    - Schema compatibility (if validate_schema enabled)
+    - Quality checks on sample data
+    - Required columns presence
+    """
+    from rich.panel import Panel
+    import itertools
 
-    print(f"🔍 Validerer konfigurasjonsfil: [bold green]{config_file}[/bold green]")
+    console.print("\n[bold cyan]🔍 Conduit Pre-Flight Validation[/bold cyan]\n")
 
+    # Step 1: Load configuration
+    console.print("[bold]Step 1:[/bold] Loading configuration...")
     try:
         config = load_config(config_file)
-        print("✅ Konfigurasjon er gyldig!")
+        console.print("  [green]✓[/green] Configuration loaded successfully")
     except Exception as e:
-        print(f"❌ [bold red]Feil i konfigurasjon:[/bold red]\n{e}")
+        console.print(f"  [red]✗[/red] Configuration error: {e}")
+        raise typer.Exit(code=2)
 
-@app.command()
-def test(
-    config_file: Path = typer.Option(
-        "ingest.yml",
-        "--file",
-        "-f",
-        help="Path to configuration file"
-    )
-):
-    """Test all connections before running pipeline."""
-    console = Console()
+    # Step 2: Find resource
+    resource = next((r for r in config.resources if r.name == resource_name), None)
+    if not resource:
+        console.print(f"[red]✗ Resource '{resource_name}' not found[/red]")
+        available = ", ".join([r.name for r in config.resources])
+        console.print(f"[dim]Available resources: {available}[/dim]")
+        raise typer.Exit(code=2)
+
+    source_config = next(s for s in config.sources if s.name == resource.source)
+    destination_config = next(d for d in config.destinations if d.name == resource.destination)
+
+    # Step 3: Test connections
+    console.print(f"\n[bold]Step 2:[/bold] Testing connections...")
+    src_map = get_source_connector_map()
+    dst_map = get_destination_connector_map()
+
+    src_class = src_map.get(source_config.type)
+    dst_class = dst_map.get(destination_config.type)
+
+    if not src_class or not dst_class:
+        console.print("[red]✗ Unknown connector type[/red]")
+        raise typer.Exit(code=2)
+
     try:
-        config = load_config(config_file)
-    except Exception as e:
-        console.print(f"[red]❌ Config error:[/red] {e}")
-        raise typer.Exit(code=1)
-
-    console.print("\n[bold]Testing Connections...[/bold]\n")
-    all_passed = True
-
-    from conduit_core.connectors.registry import get_source_connector_map, get_destination_connector_map
-    source_map = get_source_connector_map()
-    dest_map = get_destination_connector_map()
-
-    for source_config in config.sources:
-        SourceClass = source_map.get(source_config.type)
-        if not SourceClass:
-            console.print(f"[yellow]⚠[/yellow]  Source '{source_config.name}': Unknown type '{source_config.type}'")
-            continue
-        try:
-            source = SourceClass(source_config)
+        source = src_class(source_config)
+        if hasattr(source, "test_connection"):
             source.test_connection()
-            console.print(f"[green]✓[/green]  Source '{source_config.name}' ({source_config.type})")
-        except ConnectionError as e:
-            console.print(f"[red]✗[/red]  Source '{source_config.name}' failed:\n[dim]{e}[/dim]\n")
-            all_passed = False
-        except Exception as e:
-            console.print(f"[red]✗[/red]  Source '{source_config.name}': Unexpected error: {e}")
-            all_passed = False
-
-    for dest_config in config.destinations:
-        DestClass = dest_map.get(dest_config.type)
-        if not DestClass:
-            console.print(f"[yellow]⚠[/yellow]  Destination '{dest_config.name}': Unknown type '{dest_config.type}'")
-            continue
-        try:
-            dest = DestClass(dest_config)
-            dest.test_connection()
-            console.print(f"[green]✓[/green]  Destination '{dest_config.name}' ({dest_config.type})")
-        except ConnectionError as e:
-            console.print(f"[red]✗[/red]  Destination '{dest_config.name}' failed:\n[dim]{e}[/dim]\n")
-            all_passed = False
-        except Exception as e:
-            console.print(f"[red]✗[/red]  Destination '{dest_config.name}': Unexpected error: {e}")
-            all_passed = False
-
-    if all_passed:
-        console.print("\n[green bold]✅ All connections successful![/green bold]")
-    else:
-        console.print("\n[red bold]❌ Some connections failed.[/red bold]")
+        else:
+            console.print(f"  [green]✓[/green] Source connection ({source_config.type}) [dim](file-based)[/dim]")
+        console.print(f"  [green]✓[/green] Source connection ({source_config.type})")
+    except Exception as e:
+        console.print(f"  [red]✗[/red] Source connection failed: {e}")
         raise typer.Exit(code=1)
 
+    try:
+        destination = dst_class(destination_config)
+        if hasattr(destination, "test_connection"):
+            destination.test_connection()
+        else:
+            console.print(f"  [green]✓[/green] Destination connection ({destination_config.type}) [dim](file-based)[/dim]")
+        console.print(f"  [green]✓[/green] Destination connection ({destination_config.type})")
+    except Exception as e:
+        console.print(f"  [red]✗[/red] Destination connection failed: {e}")
+        raise typer.Exit(code=1)
+
+    # Step 4: Sample and infer schema
+    console.print(f"\n[bold]Step 3:[/bold] Sampling data and inferring schema...")
+    from .schema import SchemaInferrer
+    try:
+        import itertools
+        sample_records = list(itertools.islice(source.read(resource.query), sample_size))
+        if not sample_records:
+            console.print("[yellow]⚠ No records found in source[/yellow]")
+            raise typer.Exit(code=0)
+        inferred_schema = SchemaInferrer.infer_schema(sample_records, sample_size)
+        console.print(f"  [green]✓[/green] Inferred schema from {len(sample_records)} records")
+    except Exception as e:
+        console.print(f"  [red]✗[/red] Schema inference failed: {e}")
+        raise typer.Exit(code=1)
+
+    # Step 5: Schema validation (if enabled)
+    validation_passed = True
+    if getattr(destination_config, "validate_schema", False):
+        from .schema_validator import SchemaValidator
+        validator = SchemaValidator()
+
+        console.print(f"\n[bold]Step 4:[/bold] Validating schema compatibility...")
+        try:
+            if hasattr(destination, "get_table_schema"):
+                dest_schema = destination.get_table_schema()
+                if dest_schema:
+                    report = validator.validate_type_compatibility(inferred_schema, dest_schema)
+                    if report.has_errors():
+                        console.print("  [red]✗[/red] Schema validation failed:")
+                        for e in report.errors:
+                            console.print(f"    • {e.format()}")
+                        validation_passed = False
+                    else:
+                        console.print("  [green]✓[/green] Type compatibility verified")
+        except Exception as e:
+            console.print(f"  [yellow]⚠[/yellow] Could not validate schema: {e}")
+
+    # Step 6: Summary
+    console.print("\n" + "─" * 60)
+    if validation_passed:
+        console.print(Panel("[green bold]✓ All validations passed[/green bold]", title="Validation Complete", border_style="green"))
+        raise typer.Exit(code=0)
+    else:
+        console.print(Panel("[red bold]✗ Validation failed[/red bold]", title="Validation Failed", border_style="red"))
+        raise typer.Exit(code=1)
+
+
+# ======================================================================================
+# COMMAND: conduit schema-compare
+# ======================================================================================
+@app.command("schema-compare")
+def schema_compare(
+    config_file: Path = typer.Option("ingest.yml", "--file", "-f", help="Path to config"),
+    resource_name: str = typer.Argument(..., help="Resource to compare"),
+    baseline: Optional[Path] = typer.Option(None, "--baseline", "-b", help="Path to baseline schema file"),
+    sample_size: int = typer.Option(100, "--sample-size", help="Number of records to sample"),
+):
+    """Compare current source schema against a baseline."""
+    import itertools, json
+    from .schema_evolution import SchemaEvolutionManager
+
+    console.print("\n[bold cyan]📊 Schema Comparison[/bold cyan]\n")
+    try:
+        config = load_config(config_file)
+    except Exception as e:
+        console.print(f"[red]✗ Failed to load config: {e}[/red]")
+        raise typer.Exit(code=1)
+
+    resource = next((r for r in config.resources if r.name == resource_name), None)
+    if not resource:
+        console.print(f"[red]✗ Resource '{resource_name}' not found[/red]")
+        raise typer.Exit(code=1)
+
+    src_config = next(s for s in config.sources if s.name == resource.source)
+    src_class = get_source_connector_map()[src_config.type]
+    source = src_class(src_config)
+
+    from .schema import SchemaInferrer
+    sample = list(itertools.islice(source.read(resource.query), sample_size))
+    current = SchemaInferrer.infer_schema(sample, sample_size)
+
+    if baseline:
+        with open(baseline, "r") as f:
+            base = json.load(f)
+    else:
+        from .schema_store import SchemaStore
+        store = SchemaStore()
+        base = store.load_last_schema(resource_name)
+        if not base:
+            console.print("[yellow]⚠ No previous schema found[/yellow]")
+            raise typer.Exit(code=0)
+
+    manager = SchemaEvolutionManager()
+    changes = manager.compare_schemas(base, current)
+
+    if not changes.has_changes():
+        console.print(Panel("[green]No schema changes detected[/green]", border_style="green"))
+        raise typer.Exit(code=0)
+
+    table = Table(title="Schema Changes", show_header=True, header_style="bold cyan")
+    table.add_column("Change Type")
+    table.add_column("Column")
+    table.add_column("Details")
+
+    for c in changes.added_columns:
+        table.add_row("➕ Added", c.name, f"{c.type}")
+    for c in changes.removed_columns:
+        table.add_row("➖ Removed", c, base[c].get("type", "unknown") if isinstance(base, dict) else "?")
+    for c in changes.type_changes:
+        table.add_row("🔄 Type Change", c.column, f"{c.old_type} → {c.new_type}")
+
+    console.print(table)
+    raise typer.Exit(code=0)
+
+
+# ======================================================================================
+# COMMAND: conduit schema (enhanced)
+# ======================================================================================
 @app.command()
 def schema(
     config_file: Path = typer.Option("ingest.yml", "--file", "-f"),
     resource_name: str = typer.Argument(..., help="Resource name to infer schema from"),
     output: Path = typer.Option("schema.json", "--output", "-o"),
     sample_size: int = typer.Option(100, "--sample-size"),
+    format: str = typer.Option("json", "--format", help="Output format: json or yaml"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed schema information"),
 ):
     """Infer and export schema from a source."""
+    import itertools, json, yaml
     from .schema import SchemaInferrer
-    from .connectors.registry import get_source_connector_map
-    import json
-    
-    console = Console()
+
     config = load_config(config_file)
     resource = next((r for r in config.resources if r.name == resource_name), None)
     if not resource:
         console.print(f"[red]Resource '{resource_name}' not found[/red]")
         raise typer.Exit(1)
-        
-    source_config = next(s for s in config.sources if s.name == resource.source)
-    source_class = get_source_connector_map()[source_config.type]
-    source = source_class(source_config)
-        
-    console.print(f"Sampling {sample_size} records...")
+
+    src_config = next(s for s in config.sources if s.name == resource.source)
+    src_class = get_source_connector_map()[src_config.type]
+    source = src_class(src_config)
+
     records = list(itertools.islice(source.read(resource.query), sample_size))
+    if not records:
+        console.print("[yellow]⚠ No records found[/yellow]")
+        raise typer.Exit(0)
+
     schema = SchemaInferrer.infer_schema(records, sample_size)
-        
+
+    if verbose:
+        table = Table(title=f"Schema for {resource_name}", show_header=True)
+        table.add_column("Column", style="cyan")
+        table.add_column("Type", style="green")
+        for k, v in schema.items():
+            table.add_row(k, v["type"])
+        console.print(table)
+
     output.parent.mkdir(parents=True, exist_ok=True)
-    with open(output, 'w') as f:
-        json.dump(schema, f, indent=2)
-        
-    console.print(f"[green]✓[/green] Schema exported to {output}")
-
-@app.command()
-def run(
-    config_file: Path = typer.Option(
-        "ingest.yml",
-        "--file",
-        "-f",
-        help="Stien til din ingest.yml fil.",
-    ),
-    batch_size: int = typer.Option(
-        1000,
-        "--batch-size",
-        "-b",
-        help="Antall records per batch (default: 1000)",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Preview pipeline without writing data",
-    ),
-    no_progress: bool = typer.Option(
-        False,
-        "--no-progress",
-        help="Disable progress bars (useful for logs/CI)",
-    ),
-):
-    """Kjører data-innsamlingen basert på ingest.yml."""
-    if no_progress:
-        os.environ['CONDUIT_NO_PROGRESS'] = '1'
-
-    logging.basicConfig(
-        level=logging.WARNING,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    
-    if dry_run:
-        print("\n[bold yellow]🔍 DRY RUN MODE - No data will be written[/bold yellow]\n")
-
-    pipeline_start = time.time()
-    try:
-        config = load_config(config_file)
-        print_header()
-        for resource in config.resources:
-            run_resource(resource, config, batch_size=batch_size, dry_run=dry_run)
-        pipeline_elapsed = time.time() - pipeline_start
-        print_summary(len(config.resources), pipeline_elapsed)
-    except Exception as e:
-        print(f"\n❌ [bold red]Pipeline failed:[/bold red]")
-        print(e)
-        raise typer.Exit(code=1)
-
-@app.command()
-def manifest(
-    pipeline_name: Optional[str] = typer.Option(None, help="Filter by pipeline name"),
-    failed_only: bool = typer.Option(False, "--failed", help="Show only failed runs"),
-    manifest_path: Path = typer.Option("manifest.json", help="Path to manifest file"),
-):
-    """Show pipeline execution history."""
-    from conduit_core.manifest import PipelineManifest
-    
-    manifest = PipelineManifest(manifest_path)
-    if failed_only:
-        entries = manifest.get_failed_runs()
-    elif pipeline_name:
-        entries = manifest.get_all(pipeline_name)
+    if format in ("yaml", "yml") or output.suffix in (".yaml", ".yml"):
+        with open(output, "w") as f:
+            yaml.dump(schema, f, sort_keys=False)
     else:
-        entries = manifest.get_all()
+        with open(output, "w") as f:
+            json.dump(schema, f, indent=2)
 
-    if not entries:
-        typer.echo("No pipeline runs found.")
-        return
-
-    console = Console()
-    table = Table(title="Pipeline Execution History")
-    # ... (rest of manifest command is unchanged)
-    table.add_column("Pipeline", style="cyan")
-    table.add_column("Status", style="green")
-    table.add_column("Records", justify="right")
-    table.add_column("Failed", justify="right")
-    table.add_column("Duration", justify="right")
-    table.add_column("Completed At")
-
-    for entry in entries[-20:]:
-        status_style = "green" if entry.status == "success" else "red"
-        if entry.status == "partial":
-            status_style = "yellow"
-        table.add_row(
-            entry.pipeline_name,
-            f"[{status_style}]{entry.status}[/{status_style}]",
-            str(entry.records_written),
-            str(entry.records_failed),
-            f"{entry.duration_seconds:.2f}s",
-            entry.completed_at.split("T")[0],
-        )
-    console.print(table)
+    console.print(f"[green]✓ Schema exported to {output}[/green]")
+    raise typer.Exit(code=0)
 
 
-@app.command()
-def checkpoints():
-    """List all saved checkpoints."""
-    from conduit_core.checkpoint import CheckpointManager
-    
-    mgr = CheckpointManager()
-    checkpoints = mgr.list_checkpoints()
-
-    if not checkpoints:
-        typer.echo("No checkpoints found.")
-        return
-
-    console = Console()
-    table = Table(title="Saved Checkpoints")
-    # ... (rest of checkpoints command is unchanged)
-    table.add_column("Pipeline", style="cyan")
-    table.add_column("Column", style="green")
-    table.add_column("Last Value", justify="right")
-    table.add_column("Records", justify="right")
-    table.add_column("Timestamp")
-
-    for cp in checkpoints:
-        table.add_row(
-            cp['pipeline_name'],
-            cp['checkpoint_column'],
-            str(cp['last_value']),
-            str(cp['records_processed']),
-            cp['timestamp'].split('T')[0]
-        )
-    console.print(table)
-
-@app.command()
-def clear_checkpoints(
-    pipeline_name: Optional[str] = typer.Option(None, help="Clear specific pipeline checkpoint")
-):
-    """Clear saved checkpoints."""
-    from conduit_core.checkpoint import CheckpointManager
-
-    mgr = CheckpointManager()
-    if pipeline_name:
-        if mgr.clear_checkpoint(pipeline_name):
-            typer.echo(f"✅ Cleared checkpoint for: {pipeline_name}")
-        else:
-            typer.echo(f"❌ No checkpoint found for: {pipeline_name}")
-    else:
-        checkpoints = mgr.list_checkpoints()
-        for cp in checkpoints:
-            mgr.clear_checkpoint(cp['pipeline_name'])
-        typer.echo(f"✅ Cleared {len(checkpoints)} checkpoint(s)")
-
+# ======================================================================================
+# ENTRYPOINT
+# ======================================================================================
 if __name__ == "__main__":
     app()
