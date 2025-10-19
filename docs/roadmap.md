@@ -2,75 +2,162 @@
 
 This document outlines the planned features and direction for future Conduit Core versions.
 
-## v1.0 - User Experience Polish (Current - 90% Complete)
-*Status:* In Development
+## v1.0 – Data Quality, Schema Validation & Evolution (Current Release)
+Status: Complete — 173 passing tests, 0 warnings
+Focus: Reliability, schema intelligence, and pre-flight validation
 
-* ✅ Checkpoint/Resume system
-* ✅ Connection validation for all connectors
-* ✅ Dry-run mode
-* ✅ Real-time progress bars
-* ✅ Production-ready JSON connector
-* ⏳ Schema inference integration 
+### Key Features Delivered
 
-## v1.2 - Data Quality & Schema Management 
-*Focus:* Ensuring data integrity and handling schema changes gracefully.
+* **Schema Validation:**
+Pre-flight compatibility checks between source and destination schemas.
+Detects missing, extra, or type-mismatched columns before execution.
 
 * **Schema Evolution:**
-    * Auto-detect schema changes (new/removed columns, type changes).
-    * Configurable handling: `auto` (add nullable), `warn`, `fail`, `ignore`.
-    * Automatic `ALTER TABLE` generation for supported databases.
-* **Data Quality Checks:**
-    * Define rules in YAML (Regex, Range, Not Null, Unique).
-    * Configurable actions: `dlq` (send to Dead Letter Queue), `fail` pipeline, `warn`.
-    * Support for custom validation functions.
-* **Schema Validation:**
-    * Pre-flight checks for type compatibility between source and destination.
-    * Detection of missing or extra columns based on a target schema.
-    * Ability to export inferred or defined schemas.
+Detects schema drift (added/removed/changed columns).
+Supports configurable strategies:
 
-## v1.3 - Advanced Sync Strategies 
-*Focus:* Supporting more complex incremental loading patterns beyond simple append.
+* ```auto``` → auto-add compatible columns
+* ```warn``` → log warning but continue
+* ```fail``` → stop on incompatible change
 
-* **Upsert Operations:** Efficiently INSERT new records and UPDATE existing ones based on a unique key (`mode: upsert`, `unique_key: [id]`).
-* **Delete Detection:** Propagate deletes from source to destination (e.g., via `is_deleted` flag or tracking table).
-* **Advanced Checkpointing:** Support for composite keys and multiple checkpoint columns.
-* **Change Data Capture (CDC) - Initial Support:**
-    * Timestamp-based CDC (`WHERE updated_at > last_watermark`).
-    * High-watermark persistence and management.
+* **Data Quality Framework:**
+Define column-level rules directly in YAML:
+```yaml
+quality_checks:
+  - column: email
+    rule: regex
+    pattern: "^[^@]+@[^@]+$"
+  - column: id
+    rule: unique
+```
 
-## v1.4 - Integrations & Observability 
-*Focus:* Making Conduit Core work seamlessly within the broader data ecosystem.
+Built-in validators: ```not_null```, ```unique```, ```regex```, ```range```, ```allowed_values```.
+Configurable outcomes: ```fail```, ```warn```, or ```dlq```.
 
-* **dbt Integration:**
-    * Post-hook to trigger `dbt run` or `dbt build` after successful Conduit runs.
-    * Pass context (e.g., tables updated) between Conduit and dbt.
-* **Orchestrator Support:**
-    * Official Airflow provider/operator.
-    * Prefect task library integration.
-    * Dagster asset integration.
-* **Observability:**
-    * Export core metrics (rows processed, duration, errors) to Prometheus.
-    * Integration with Datadog or similar monitoring platforms.
-    * Option for structured JSON logging (for CloudWatch, ELK stack, etc.).
-* **Alerting:**
-    * Basic webhook support on pipeline failure/success.
-    * Potential Slack/Email notification options.
+* **Enhanced CLI Suite:**
+    * ```conduit validate``` → Pre-flight validation (config, schema, quality).
+    * ```conduit schema-compare``` → Detect schema drift between runs.
+    * ```conduit schema``` → Infer and export schema in JSON or YAML format.
 
-## v1.5 - More Connectors 
-*Focus:* Expanding the range of supported systems. High-priority targets include:
+* **Improved Observability:**
+Expanded pipeline manifest with structured metadata.
+Consistent exit codes for automation and CI/CD use.
 
-* **Databases:** MySQL (Source + Dest), Azure SQL (Dest), MongoDB (Dest)
-* **Warehouses:** Redshift (Dest)
-* **Other:** REST APIs (Source), Kafka (Source), Google Sheets (Source + Dest)
-* **Connector Framework:** Improvements to make third-party connector development easier.
+## v1.2 Advanced Sync Strategies & Observability
 
-## v2.0 - Enterprise & Scale 
-*Focus:* Addressing larger deployments, real-time needs, and usability at scale.
+Focus: Incremental loading, CDC, deeper monitoring, and integration with orchestration tools.
 
-* **Distributed Execution:** Scale processing across multiple workers/nodes.
-* **Real-Time Streaming:** Ingest from Kafka/Kinesis with micro-batching.
-* **Web UI & API:** A graphical interface for monitoring, managing, and configuring pipelines.
-* **Multi-Tenancy / RBAC:** Support for multiple teams and users with permissions.
-* **Advanced Features:** Auto-schema mapping, AI-driven suggestions, performance profiling.
+### Planned Features
 
-*(This roadmap is subject to change based on community feedback and priorities.)*
+**Incremental & Upsert Operations:**
+Support for ```mode: upsert``` with ```unique_key``` definitions.
+```yaml
+mode: upsert
+unique_key: [id]
+```
+
+* **Delete Propagation:**
+Optional detection and handling of deleted source records.
+
+* **Change Data Capture (CDC):**
+Timestamp and high-watermark-based incremental extraction.
+
+* **Extended Observability:**
+Export metrics (records processed, duration, throughput)
+to Prometheus or structured JSON logs.
+
+* **dbt Integration (Phase 1):**
+Run dbt build automatically after successful pipelines.
+Pass updated tables context to dbt via manifest handoff.
+
+## v1.3 – Integrations & Ecosystem Expansion
+
+**Focus:** Interoperability, orchestration, and monitoring.
+
+### Targets
+
+* **Airflow** / **Prefect** / **Dagster Integrations**:
+Native operators for orchestrator workflows.
+
+* **Alerting**:
+Configurable webhooks and Slack notifications for job success/failure.
+
+* **Metrics Integration**:
+Expose internal metrics to Datadog, Grafana, or OpenTelemetry.
+
+* **Connector SDK Enhancements**:
+Easier API for third-party connector developers.
+
+## v1.4 – Connectors Expansion
+
+**Focus:** Broaden connector coverage for databases, warehouses, and APIs.
+
+### Planned Connectors
+
+* **Databases:** MySQL (source+dest), Azure SQL, MongoDB
+* **Warehouses:** Redshift, ClickHouse
+* **Other Systems:** REST APIs (source), Kafka (source), Google Sheets
+
+### Framework Enhancements
+
+* Modular connector registration
+* Pluggable authentication and retry strategies
+
+## v2.0 – Enterprise & Scale
+
+**Focus:** Scale, real-time workloads, and enterprise usability.
+
+### Long-Term Goals
+
+* **Distributed Execution Engine:**
+Parallelize workloads across nodes with centralized orchestration.
+
+* **Real-Time Streaming Mode:**
+Micro-batched ingestion from Kafka/Kinesis with checkpointed commits.
+
+* **Web UI & API Layer (Conduit Cloud):**
+
+    * Monitor and manage pipelines visually
+
+    * Multi-tenant project management
+
+    * Team-level RBAC and usage analytics
+
+* **Performance Profiling & Auto-Tuning:**
+Runtime suggestions for optimal batch sizes and parallelism.
+
+## Version Summary
+| Version  | Focus                                                    | Status            |
+| -------- | -------------------------------------------------------- | ----------------- |
+| **v1.0** | Foundational Release — Reliability, Schema, Data Quality | Current           |
+| **v1.1** | Incremental Loading, CDC                                 | In Development    |
+| **v1.2** | Observability & Integrations                             | Planned           |
+| **v1.3** | Connector Expansion                                      | Planned           |
+| **v1.4** | Scaling & Conduit Cloud                                  | Future Vision     |
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
