@@ -4,7 +4,7 @@
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Poetry](https://img.shields.io/badge/dependency-poetry-blue)](https://python-poetry.org/)
-[![Tests Passing](https://img.shields.io/badge/tests-141%20passing-brightgreen)](./tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-✔️%20passing-brightgreen)](./tests/)
 [![License](https://img.shields.io/badge/license-BSL--1.1-orange)](LICENSE)
 
 An **source-available**, **bulletproof CLI** for declarative, reliable, and testable data ingestion. Conduit Core is designed to be the **industry standard for the "Extract & Load** part of the modern data stack - the perfect companion to **dbt**.
@@ -96,7 +96,7 @@ resources:
 
 ### 3. Run it:
 ```bash
-conduit run --file ingest.yml
+conduit run csv_to_json_transfer --file ingest.yml
 ```
 
 Output written to ```./output_users.json```
@@ -115,7 +115,7 @@ conduit validate csv_to_json_transfer --file ingest.yml
 * Required columns
 
 **Example Output:**
-```sql
+```text
  Conduit Pre-Flight Validation
 
 ✓ Configuration loaded successfully
@@ -133,7 +133,7 @@ conduit schema-compare csv_to_json_transfer --file ingest.yml
 ```
 
 **Output:**
-```sql
+```text
  Schema Comparison
 
  ADDED: signup_date (DATE)
@@ -150,10 +150,10 @@ resources:
     destination: pg_dest
     quality_checks:
       - column: email
-        rule: regex
+        check: regex
         pattern: "^[^@]+@[^@]+$"
       - column: id
-        rule: unique
+        check: unique
 ```
 
 **Run:**
@@ -178,16 +178,18 @@ See docs/data-quality.md
 | `conduit schema-compare` | Compare current schema vs baseline         |
 | `conduit manifest`       | View run history and performance metrics   |
 
-Full CLI reference: docs/cli.md
+Full CLI reference: docs/cli-reference.md
 
 ## Supported Connectors 
 
-| Category          | Connectors                        |
-| ----------------- | --------------------------------- |
-| **Files**         | CSV, JSON (Array/NDJSON), Parquet |
-| **Cloud Storage** | AWS S3                            |
-| **Databases**     | PostgreSQL                        |
-| **Warehouses**    | Snowflake, BigQuery               |
+| Category          | Sources (Read)     | Destinations (Write)            | Bidirectional   |
+| ----------------- | ------------------ | ------------------------------- | --------------- |
+| **Files**         | CSV, JSON, Parquet | CSV, JSON, Parquet              | Yes             |
+| **Cloud Storage** | S3                 | S3                              | Yes             |
+| **Databases**     | PostgreSQL         | PostgreSQL, Snowflake, BigQuery | PostgreSQL only |
+
+Snowflake and BigQuery are destination-only connectors.
+DummySource and DummyDestination exist for testing and validation.
 
 (See docs/connectors.md
  for setup details.)
@@ -201,14 +203,16 @@ Full CLI reference: docs/cli.md
 | **Incremental Loads**   | Process only new data            |
 | **Error Handling**      | Automatic retries + DLQ storage  |
 
+Incremental loading is configured using the ```incremental_column``` field.
+The engine automatically appends a ```WHERE <column> > <last_value>``` clause when a previous state exists — you do not need to use placeholders.
+
 ## Roadmap
 ### v1.0 (Current)
 
 * CLI Validation System (```conduit validate```)
 * Schema Evolution & Drift Detection
 * Data Quality Framework
-* Full Documentation Set
-* 173 Passing Tests, 0 Warnings
+* Checkpoints & Resume System
 
  ### v1.2
 
