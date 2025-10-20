@@ -131,10 +131,10 @@ class ConduitLogger:
         text = Text()
         text.append(f"{timestamp} ", style="dim")
 
-        status_icon = "✓"
+        status_icon = "[OK]"
         status_style = "bold green"
         if failed > 0:
-             status_icon = "⚠"
+             status_icon = "[WARN]"
              status_style = "bold yellow" if successful > 0 else "bold red"
         elif total_processed == 0 and successful == 0:
              status_icon = "-"

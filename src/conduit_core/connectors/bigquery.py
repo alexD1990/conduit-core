@@ -156,7 +156,7 @@ class BigQueryDestination(BaseDestination):
             if load_job.errors:
                 raise ValueError(f"BigQuery load job failed: {load_job.errors}")
             
-            logger.info(f"✅ Successfully loaded {load_job.output_rows} rows to {self.table_id}")
+            logger.info(f"[OK] Successfully loaded {load_job.output_rows} rows to {self.table_id}")
 
         except NotFound:
             if self.config.auto_create_table:
@@ -165,7 +165,7 @@ class BigQueryDestination(BaseDestination):
             else:
                 raise ValueError(f"The BigQuery table '{self.table_id}' does not exist. Enable 'auto_create_table' in your destination config to create it.") from None
         except Exception as e:
-            logger.error(f"❌ Unexpected error during BigQuery load job: {e}")
+            logger.error(f"[FAIL] Unexpected error during BigQuery load job: {e}")
             raise
         finally:
             self.accumulated_records.clear()

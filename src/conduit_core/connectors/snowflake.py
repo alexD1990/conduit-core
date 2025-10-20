@@ -222,7 +222,7 @@ class SnowflakeDestination(BaseDestination):
             result = self._execute_snowflake_commands(cursor, stage_name, temp_csv_path)
             
             if result and len(result) >= 4 and result[3] == 'LOADED':  # Status in column 4
-                logger.info(f"✅ Successfully loaded rows into Snowflake")
+                logger.info(f"[OK] Successfully loaded rows into Snowflake")
             else:
                 logger.warning(f"Snowflake COPY command did not return 'LOADED' status. Result: {result}")
 

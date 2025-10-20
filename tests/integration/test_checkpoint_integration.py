@@ -35,7 +35,7 @@ def test_checkpoint_resume_after_failure(tmp_path):
     checkpoint_after = mgr.load_checkpoint("test_pipeline")
     assert checkpoint_after is None
 
-    print("✅ Checkpoint persistence test passed")
+    print("[OK] Checkpoint persistence test passed")
 
 
 def test_checkpoint_with_different_types(tmp_path):
@@ -62,4 +62,4 @@ def test_checkpoint_with_different_types(tmp_path):
     cp = mgr.load_checkpoint("pipeline_float")
     assert cp['last_value'] == 3.14
 
-    print("✅ Checkpoint type handling test passed")
+    print("[OK] Checkpoint type handling test passed")

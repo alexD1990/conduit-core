@@ -20,28 +20,28 @@ def generate_delimiter_files():
         writer = csv.DictWriter(f, fieldnames=["id", "name", "age"], delimiter=",")
         writer.writeheader()
         writer.writerows(data)
-    print("✅ Created comma_delim.csv")
+    print("[OK] Created comma_delim.csv")
     
     # Semicolon-delimited
     with open(FIXTURES_DIR / "semicolon_delim.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["id", "name", "age"], delimiter=";")
         writer.writeheader()
         writer.writerows(data)
-    print("✅ Created semicolon_delim.csv")
+    print("[OK] Created semicolon_delim.csv")
     
     # Tab-delimited
     with open(FIXTURES_DIR / "tab_delim.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["id", "name", "age"], delimiter="\t")
         writer.writeheader()
         writer.writerows(data)
-    print("✅ Created tab_delim.csv")
+    print("[OK] Created tab_delim.csv")
     
     # Pipe-delimited
     with open(FIXTURES_DIR / "pipe_delim.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["id", "name", "age"], delimiter="|")
         writer.writeheader()
         writer.writerows(data)
-    print("✅ Created pipe_delim.csv")
+    print("[OK] Created pipe_delim.csv")
 
 
 if __name__ == "__main__":

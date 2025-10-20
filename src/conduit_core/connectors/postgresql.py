@@ -241,7 +241,7 @@ class PostgresDestination(BaseDestination):
             
             self._execute_batch_insert(cursor, insert_query, data)
             conn.commit()
-            logger.info(f"✅ Successfully wrote {len(data)} records to {self.db_schema}.{self.table}")
+            logger.info(f"[OK] Successfully wrote {len(data)} records to {self.db_schema}.{self.table}")
         except psycopg2.Error as e:
             if conn:
                 conn.rollback()

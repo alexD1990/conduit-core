@@ -64,7 +64,7 @@ def run(
             console.print(f"[red]✗ Resource '{r.name}' failed: {e}[/red]")
             raise typer.Exit(code=1)
 
-    console.print(Panel("[green bold]✓ Pipeline completed successfully[/green bold]", border_style="green"))
+    console.print(Panel("[green bold][OK] Pipeline completed successfully[/green bold]", border_style="green"))
     raise typer.Exit(code=0)
 
 
@@ -98,7 +98,7 @@ def manifest(
         elif hasattr(manifest, "entries"):
             entries = manifest.entries
         else:
-            console.print("[yellow]⚠ No manifest entries found[/yellow]")
+            console.print("[yellow][WARN] No manifest entries found[/yellow]")
             raise typer.Exit(code=0)
 
         # Filtering
@@ -131,12 +131,12 @@ def manifest(
                     str(e.started_at),
                 )
             except Exception as ex:
-                console.print(f"[yellow]⚠ Skipped malformed entry: {ex}[/yellow]")
+                console.print(f"[yellow][WARN] Skipped malformed entry: {ex}[/yellow]")
                 continue
 
         console.print(table)
 
-        # ✅ Add plain-text summary for test visibility
+        # [OK] Add plain-text summary for test visibility
         console.print("\nSummary (plain text):")
         for e in entries[-10:]:
             print(f"{e.pipeline_name} | {e.source_type} → {e.destination_type} | {e.status}")
@@ -144,7 +144,7 @@ def manifest(
         raise typer.Exit(code=0)
 
     except FileNotFoundError:
-        console.print(f"[yellow]⚠ Manifest file not found: {manifest_path}[/yellow]")
+        console.print(f"[yellow][WARN] Manifest file not found: {manifest_path}[/yellow]")
         raise typer.Exit(code=0)
     except Exception as e:
         console.print(f"[red]✗ Error reading manifest: {e}[/red]")
@@ -179,7 +179,7 @@ def validate(
     console.print("[bold]Step 1:[/bold] Loading configuration...")
     try:
         config = load_config(config_file)
-        console.print("  [green]✓[/green] Configuration loaded successfully")
+        console.print("  [green][OK][/green] Configuration loaded successfully")
     except Exception as e:
         console.print(f"  [red]✗[/red] Configuration error: {e}")
         raise typer.Exit(code=2)
@@ -212,8 +212,8 @@ def validate(
         if hasattr(source, "test_connection"):
             source.test_connection()
         else:
-            console.print(f"  [green]✓[/green] Source connection ({source_config.type}) [dim](file-based)[/dim]")
-        console.print(f"  [green]✓[/green] Source connection ({source_config.type})")
+            console.print(f"  [green][OK][/green] Source connection ({source_config.type}) [dim](file-based)[/dim]")
+        console.print(f"  [green][OK][/green] Source connection ({source_config.type})")
     except Exception as e:
         console.print(f"  [red]✗[/red] Source connection failed: {e}")
         raise typer.Exit(code=1)
@@ -223,8 +223,8 @@ def validate(
         if hasattr(destination, "test_connection"):
             destination.test_connection()
         else:
-            console.print(f"  [green]✓[/green] Destination connection ({destination_config.type}) [dim](file-based)[/dim]")
-        console.print(f"  [green]✓[/green] Destination connection ({destination_config.type})")
+            console.print(f"  [green][OK][/green] Destination connection ({destination_config.type}) [dim](file-based)[/dim]")
+        console.print(f"  [green][OK][/green] Destination connection ({destination_config.type})")
     except Exception as e:
         console.print(f"  [red]✗[/red] Destination connection failed: {e}")
         raise typer.Exit(code=1)
@@ -236,10 +236,10 @@ def validate(
         import itertools
         sample_records = list(itertools.islice(source.read(resource.query), sample_size))
         if not sample_records:
-            console.print("[yellow]⚠ No records found in source[/yellow]")
+            console.print("[yellow][WARN] No records found in source[/yellow]")
             raise typer.Exit(code=0)
         inferred_schema = SchemaInferrer.infer_schema(sample_records, sample_size)
-        console.print(f"  [green]✓[/green] Inferred schema from {len(sample_records)} records")
+        console.print(f"  [green][OK][/green] Inferred schema from {len(sample_records)} records")
     except Exception as e:
         console.print(f"  [red]✗[/red] Schema inference failed: {e}")
         raise typer.Exit(code=1)
@@ -262,14 +262,14 @@ def validate(
                             console.print(f"    • {e.format()}")
                         validation_passed = False
                     else:
-                        console.print("  [green]✓[/green] Type compatibility verified")
+                        console.print("  [green][OK][/green] Type compatibility verified")
         except Exception as e:
-            console.print(f"  [yellow]⚠[/yellow] Could not validate schema: {e}")
+            console.print(f"  [yellow][WARN][/yellow] Could not validate schema: {e}")
 
     # Step 6: Summary
     console.print("\n" + "─" * 60)
     if validation_passed:
-        console.print(Panel("[green bold]✓ All validations passed[/green bold]", title="Validation Complete", border_style="green"))
+        console.print(Panel("[green bold][OK] All validations passed[/green bold]", title="Validation Complete", border_style="green"))
         raise typer.Exit(code=0)
     else:
         console.print(Panel("[red bold]✗ Validation failed[/red bold]", title="Validation Failed", border_style="red"))
@@ -318,7 +318,7 @@ def schema_compare(
         store = SchemaStore()
         base = store.load_last_schema(resource_name)
         if not base:
-            console.print("[yellow]⚠ No previous schema found[/yellow]")
+            console.print("[yellow][WARN] No previous schema found[/yellow]")
             raise typer.Exit(code=0)
 
     manager = SchemaEvolutionManager()
@@ -372,7 +372,7 @@ def schema(
 
     records = list(itertools.islice(source.read(resource.query), sample_size))
     if not records:
-        console.print("[yellow]⚠ No records found[/yellow]")
+        console.print("[yellow][WARN] No records found[/yellow]")
         raise typer.Exit(0)
 
     schema = SchemaInferrer.infer_schema(records, sample_size)
@@ -393,7 +393,7 @@ def schema(
         with open(output, "w") as f:
             json.dump(schema, f, indent=2)
 
-    console.print(f"[green]✓ Schema exported to {output}[/green]")
+    console.print(f"[green][OK] Schema exported to {output}[/green]")
     raise typer.Exit(code=0)
 
 
