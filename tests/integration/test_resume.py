@@ -7,6 +7,9 @@ from conduit_core.engine import run_resource
 from conduit_core.checkpoint import CheckpointManager
 import json
 
+"""
+Note: Resume functionality is implemented but awaiting full integration tests.
+"""
 
 @pytest.fixture
 def fixtures_dir():

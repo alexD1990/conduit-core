@@ -248,13 +248,10 @@ export CONDUIT_SCHEMA_MANAGER="custom_evolution.CustomEvolution"
 
 ## See Also
 
-* Data Quality
-
-* Schema Validation
-
-* CLI Reference
-
-* README.md
+- [Data Quality](./data-quality.md)
+- [Schema Validation](./schema-validation.md)
+- [CLI Reference](./cli-reference.md)
+- [README](../README.md)
 
 ---
 This document reflects Conduit Core v1.0 schema evolution behavior.  
