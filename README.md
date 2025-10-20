@@ -188,6 +188,8 @@ Full CLI reference: docs/cli-reference.md
 | **Cloud Storage** | S3                 | S3                              | Yes             |
 | **Databases**     | PostgreSQL         | PostgreSQL, Snowflake, BigQuery | PostgreSQL only |
 
+Note: `DummySource` and `DummyDestination` are provided for testing and validation purposes.
+
 Snowflake and BigQuery are destination-only connectors.
 DummySource and DummyDestination exist for testing and validation.
 

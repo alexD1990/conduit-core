@@ -235,7 +235,7 @@ conduit validate my_resource
 ## See Also
 This document reflects the Conduit Core v1.0 CLI. Future versions may expand functionality (e.g., parallel execution, advanced schema diffing).
 
-- [Schema Validation](schema-validation.md)
-- [Schema Evolution](schema-evolution.md)
-- [Data Quality](data-quality.md)
+- [Schema Validation](./schema-validation.md)
+- [Schema Evolution](.7schema-evolution.md)
+- [Data Quality](.7data-quality.md)
 - [README](../README.md)

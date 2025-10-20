@@ -1,7 +1,7 @@
 Metadata-Version: 2.4
 Name: conduit-core
-Version: 0.1.0
-Summary: The VLC of data ingestion
+Version: 1.0.0
+Summary: Declarative, Reliable, Testable Data Ingestion for the Modern Data Stack
 Author-email: alex <alex12060309@gmail.com>
 Requires-Python: >=3.12
 Description-Content-Type: text/markdown
@@ -9,7 +9,6 @@ License-File: LICENSE
 Requires-Dist: typer[all]>=0.19.2
 Requires-Dist: pyyaml>=6.0.3
 Requires-Dist: pydantic>=2.11.9
-Requires-Dist: pyodbc>=5.2.0
 Requires-Dist: python-dotenv>=1.1.1
 Requires-Dist: pandas>=2.0.0
 Requires-Dist: pyarrow>=14.0.0
@@ -19,17 +18,18 @@ Requires-Dist: snowflake-connector-python>=3.0.0
 Provides-Extra: dev
 Requires-Dist: pytest>=8.4.2; extra == "dev"
 Requires-Dist: moto[s3]>=5.0.0; extra == "dev"
-Dynamic: license-file
 
 # Conduit Core
 
-**The VLC of Data Ingestion - It Just Works™**
+**Declarative. Reliable. Testable.**  
+The **dbt of data ingestion** — a bulletproof open-source CLI for declarative, reliable, and testable data movement.
 
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)]()
-[![Python](https://img.shields.io/badge/python-3.12+-blue)]()
-[![License](https://img.shields.io/badge/license-MIT-blue)]()
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)]()
+[![Tests Passing](https://img.shields.io/badge/tests-173%20passing-brightgreen)]()
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)]()
 
-An open-source, bulletproof command-line tool for declarative, reliable, and testable data ingestion. Conduit Core is designed to be the industry standard for the "Extract & Load" part of the modern data stack - the perfect companion to **dbt**.
+Conduit Core is an open-source, production-grade data ingestion engine for the modern data stack.  
+It focuses on **Extract & Load**, providing atomic operations, schema validation, and data quality enforcement — all from simple YAML.
 
 ---
 
@@ -45,37 +45,38 @@ Conduit Core moves any data between any sources without breaking. Our philosophy
 
 ---
 
-## Features
+## Core Features (v1.0)
 
-### Bulletproof Reliability
-- **Retry logic** with exponential backoff on failures
-- **Automatic checkpointing** - resume from exact failure point
-- **Atomic state management** - never lose progress
-- **Comprehensive error handling** - helpful suggestions when things go wrong
-- **Connection validation** - test before running
+* **Schema Validation:**  
+  Pre-flight checks for schema compatibility between source and destination.
 
-### Beautiful User Experience
-- **Real-time progress bars** with throughput metrics
-- **Auto-detection** - CSV delimiters, file encodings, data types
-- **Dry-run mode** - preview without writing data
-- **Verbose logging** - debug with detailed output
-- **Smart defaults** - minimal configuration needed
+* **Schema Evolution:**  
+  Automatically detect and handle schema drift (added/removed/changed columns).
 
-### Developer Friendly
-- **Type resilient** - handles dates, decimals, NULLs, special characters
-- **Schema inference** - auto-detect column types
-- **Multiple formats** - CSV, JSON, Parquet, SQL databases
-- **Incremental loading** - only process new data
-- **Extensive testing** - 60+ tests covering edge cases
+* **Data Quality Framework:**  
+  Define column-level validation rules (`not_null`, `regex`, `in_list`, `unique`, etc.) in YAML.
 
----
+* **Atomic Operations:**  
+  File writes use temp files → rename; database writes are transactional.
+
+* **Checkpoint & Resume:**  
+  Automatically resume long-running jobs from the last successful batch.
+
+* **Incremental Loading:**  
+  Process only new records using `incremental_column` with automatic state tracking.
+
+* **CLI Suite:**  
+  - `conduit run` — execute pipelines  
+  - `conduit validate` — check configuration and schema  
+  - `conduit schema` — infer or compare schemas  
+  - `conduit manifest` — view detailed run history
 
 ## Quick Start
 
 ### Installation
 
 Clone the repository
-```git clone https://github.com/YOUR_USERNAME/conduit-core.git```
+```git clone https://github.com/alexD90/conduit-core.git```
 
 ```cd conduit-core```
 
@@ -86,8 +87,6 @@ Install with pip
 ```conduit --help```
 
 ---
-
-
 
 # Your First Pipeline
 ### 1. Create ```ingest.yml```:
@@ -156,10 +155,6 @@ Sources define where data comes from:
     type: parquet
     path: "./data/input.parquet"
   
-  # Azure SQL Database
-  - name: azure_db
-    type: azuresql
-     Credentials from .env file
 ```
 
 ## Destinations
@@ -177,10 +172,6 @@ Destinations define where data goes:
     type: json
     path: "./output/result.json"
   
-  # Azure SQL Database
-  - name: azure_dest
-    type: azuresql
-    path: "dbo.OutputTable"
 ```
 ## Resources
 Resources connect sources to destinations:
@@ -193,18 +184,18 @@ Resources connect sources to destinations:
     destination: json_output
     query: "n/a"
   
-  # With SQL query
+    # With SQL query
   - name: filtered_data
-    source: azure_db
+    source: postgres_source
     destination: csv_output
-    query: "SELECT * FROM Users WHERE active = 1"
+    query: "SELECT * FROM users WHERE active = true"
   
   # Incremental loading
   - name: new_orders_only
-    source: azure_db
+    source: postgres_source
     destination: json_output
-    incremental_column: "order_id"
-    query: "SELECT * FROM Orders WHERE order_id > :last_value"
+    incremental_column: order_id
+    query: "SELECT * FROM orders ORDER BY order_id"
 ```
 ## CLI Commands
 ```conduit run```
@@ -222,8 +213,8 @@ conduit run --dry-run
 # Verbose logging
 conduit run --verbose
 
-# Resume from checkpoint
-conduit run --resume
+# Automatic resume
+# If a checkpoint exists from a failed run, Conduit Core resumes automatically.
 ```
 ## Test all connections before running:
 
@@ -234,7 +225,7 @@ conduit run --resume
  
 # Sources:
  local_csv (csv): Connected
- azure_db (azuresql): Connected
+ postgres_source (postgres): Connected
  
 # Destinations:
 #json_output (json): Connected
@@ -250,38 +241,11 @@ conduit validate
   Configuration is valid!
 ```
 
-## List all saved checkpoints:
-
-```conduit checkpoints```
-```yaml
-# Output:
- Found 2 checkpoint(s):
- 
- • large_transfer
-   Row: 15000
-   Time: 2025-10-12T14:30:45
-   Rows processed: 15000
-```
-
-# Remove all checkpoints:
-
-```conduit clear-checkpoints```
-```yaml
-# Output:
-   All checkpoints removed!
-```
-
 ## Configuration & Secrets
 
 ### Environment Variables (```.env```)
 ### Store sensitive credentials in a ```.env``` file:
 ```yaml
-# Azure SQL Database
-DB_SERVER=your-server.database.windows.net
-DB_DATABASE=your-database
-DB_USER=your-username
-DB_PASSWORD=your-password
-
 # AWS (for future S3 connector)
 AWS_ACCESS_KEY_ID=your-key
 AWS_SECRET_ACCESS_KEY=your-secret
@@ -289,42 +253,29 @@ AWS_SECRET_ACCESS_KEY=your-secret
 
 ### Important: Add ```.env``` to your ```.gitignore```!
 
-## Supported Connectors
 
-### Currently Available
+## Supported Connectors (v1.0)
 
-| Connector     | Type     | Source | Destination | Features                         |
-|:--------------|:---------|:------:|:-----------:|:---------------------------------|
-| **CSV**       | File     |   ✅   |      ✅    | Auto-detect delimiter, encoding  |
-| **JSON**      | File     |   ✅   |      ✅    | Supports nested structures       |
-| **Parquet**   | File     |   ✅   |      ✅    | High-performance columnar format |
-| **Azure SQL** | Database |   ✅   |      ✅    | Full SQL query support           |
-
-### Coming Soon
-
-This is the roadmap for new connectors planned for future versions.
-
-| Connector      | Type           | Status  |
-|:---------------|:---------------|:--------|
-| **S3**         | Cloud Storage  | Planned |
-| **PostgreSQL** | Database       | Planned |
-| **MySQL**      | Database       | Planned |
-| **DynamoDB**   | NoSQL          | Planned |
-| **Redshift**   | Data Warehouse | Planned |
+| Category     | Sources (Read)              | Destinations (Write)            |
+|---------------|----------------------------|---------------------------------|
+| **Files**     | CSV, JSON, Parquet, S3     | CSV, JSON, Parquet, S3          |
+| **Databases** | PostgreSQL                 | PostgreSQL, Snowflake, BigQuery |
 
 
 # Advanced Features
 
 ## Incremental Loading
 
-Only process new data with incremental columns:
+Only process new data using an `incremental_column`.  
+Conduit Core automatically appends a filter condition (`WHERE <column> > <stored state>`) — no placeholders required.
+
 ```yaml
 resources:
   - name: new_users
     source: database
     destination: data_lake
-    incremental_column: "user_id"
-    query: "SELECT * FROM users WHERE user_id > :last_value"
+    incremental_column: user_id
+    query: "SELECT * FROM users ORDER BY user_id"
 ```
 
 ### State is automatically tracked in ```.conduit_state.json```:
@@ -333,7 +284,7 @@ resources:
     "new_users": 12345
 }
 ```
-Next run will only fetch users with ```user_id > 12345```.
+On the next run, only records with ```user_id > 12345``` are fetched automatically
 
 ## Resume from Failures
 
@@ -342,10 +293,10 @@ Next run will only fetch users with ```user_id > 12345```.
 # Pipeline crashes at row 15,000 out of 100,000
 conduit run
 
-# Resume from checkpoint
-conduit run --resume
-#  Skipped 15,000 already-processed rows
-#  Processing continues from row 15,001
+# Resume automatically after failure
+# Conduit Core detects an existing checkpoint and resumes automatically.
+# Skipped 15,000 already-processed rows
+# Processing continues from row 15,001
 ```
 
 ## Auto-Detection
@@ -383,9 +334,17 @@ print(sql)
 
  ## Testing
 
+Conduit Core includes 173 passing tests covering:
+- CLI commands
+- Engine and state management
+- Schema inference and validation
+- Data quality checks
+- Connectors (CSV, JSON, Parquet, PostgreSQL, S3)
+
  ### Run the comprehensive test suite:
-```yaml
- # Run all tests
+Run tests with:
+```bash
+# Run all tests
 pytest -v
 
 # Run specific test file
@@ -398,37 +357,37 @@ pytest --cov=conduit_core --cov-report=html
 pytest tests/integration/ -v
 ```
 
-### Test Coverage:
-
-- 60+ tests covering all features
-- Unit tests for core functionality
-- Integration tests for end-to-end flows
-- Edge case handling (NULLs, special characters, encodings)
-
----
-
 # Architecture
 
 ## Project Structure
 ```yaml
 conduit-core/
 ├── src/conduit_core/
+│   ├── batch.py 
+│   ├── checkpoint.py       # Resume capability           
 │   ├── cli.py              # CLI commands
 │   ├── config.py           # Configuration loading
 │   ├── engine.py           # Pipeline execution
-│   ├── state.py            # State management
-│   ├── checkpoint.py       # Resume capability
-│   ├── validators.py       # Data validation
-│   ├── types.py            # Type conversion
-│   ├── schema.py           # Schema inference
 │   ├── errors.py           # Custom exceptions
+│   ├── logging_utils.py    
+│   ├── manifest.py   
+│   ├── quality.py 
+│   ├── schema_evolution.py
+│   ├── schema_store.py
+│   ├── schema_validator.py
+│   ├── schema.py           # Schema inference
+│   ├── state.py            # State management
+│   ├── types.py            # Type conversion
+│   ├── validators.py       # Data validation         
 │   └── connectors/
 │       ├── base.py         # Base classes
 │       ├── registry.py     # Auto-discovery
+|       |── bigquery.py     # BigQuery connector
 │       ├── csv.py          # CSV connector
-│       ├── json_connector.py
-│       ├── parquet_connector.py
-│       └── azuresql.py
+│       ├── json.py         # JSON connector
+│       ├── parquet.py      # parquet connector
+│       ├── s3.py           # S3 connector
+│       ├── snowflake.py    # SnowFlake connector
 ├── tests/
 │   ├── test_*.py           # Unit tests
 │   ├── integration/        # Integration tests
@@ -483,10 +442,6 @@ conduit test
 # Check your .env file
 cat .env
 
-# Verify network connectivity
-ping your-server.database.windows.net
-```
-
 Problem: Special characters garbled
 Solution:
 ```yaml
@@ -501,7 +456,7 @@ file -i your_file.csv
 
 Contributions are welcome! Areas we'd love help with:
 
- - New Connectors (PostgreSQL, MySQL, MongoDB, etc.)
+- New Connectors (MySQL, MongoDB, REST APIs, etc.)
  - More Tests (especially edge cases)
  - Documentation (examples, tutorials)
  - Bug Fixes

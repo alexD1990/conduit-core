@@ -1,12 +1,18 @@
-# Conduit Core Connectors (v1.2.0)
+# Conduit Core Connectors (v1.0)
 
 This document provides configuration examples for all supported sources and destinations. Credentials should typically be managed via environment variables (e.g., in a `.env` file) rather than being hardcoded in `ingest.yml`.
 
 ## File Connectors
 
-### CSV
+### Testing Connectors
 
-Reads and writes standard Comma Separated Value files.
+- **DummySource** (`dummysource`): emits small fixed datasets (e.g., `{"id":1}`, `{"id":2}`, `{"id":3}`)
+- **DummyDestination** (`dummydestination`): in-memory sink capturing `written_records` for inspection
+
+These are for local testing and CI validation; not intended for production data movement.
+
+### CSV
+Supports both reading and writing of standard Comma-Separated Value (CSV) files.
 
 **Source:**
 ```yaml
@@ -17,10 +23,9 @@ sources:
     # Optional: Enable resume for large files
     # resume: true
     # checkpoint_column: id # Column must be increasing
-
 ```
 
-**Features:** Auto-detects delimiters (,, ;, \t, |) and common encodings (UTF-8, Latin-1, UTF-8-BOM). Handles common NULL values automatically. estimate_total_records supported for progress bars.
+**Features:** Auto-detects delimiters (,, ;, \t, |) and common encodings (UTF-8, Latin-1, UTF-8-BOM). Handles common NULL values automatically. ```estimate_total_records``` supported for progress bars.
 
 **Destination:**
 ```yaml
@@ -29,10 +34,10 @@ destinations:
     type: csv
     path: output/result_file.csv
 ```
-**Features:** Uses atomic writes (temp file → rename) for safety.
+**Features:** Uses atomic writes (temp file → rename) to ensure data integrity even during process interruptions.
 
 ### JSON
-Reads and writes JSON files, supporting standard arrays, single objects, and Newline Delimited JSON (NDJSON).
+Supports both reading and writing JSON data. Handles standard arrays, single objects, and Newline Delimited JSON (NDJSON).
 
 ***Source:***
 ```yaml
@@ -42,7 +47,7 @@ sources:
     path: data/records.json # Auto-detects array vs NDJSON
     # format: ndjson # Optional: Explicitly set format
 ```
-**Features:** Reads standard JSON arrays ```[...]```, single root objects ```{...}```, and NDJSON (one valid JSON object per line). Full UTF-8 support.
+**Features:** Reads standard JSON arrays ```[...]```, single root objects ```{...}```, and NDJSON (one valid JSON object per line). Full UTF-8 support and schema inference on sample data.
 
 **Destination:**
 ```yaml
@@ -53,7 +58,8 @@ destinations:
     indent: 2          # Optional: Pretty-print JSON array (default: 2)
     # format: ndjson   # Optional: Write NDJSON instead of array
 ```
-**Features:** Writes standard JSON arrays (pretty-printed) or NDJSON. Handles complex data types (like datetimes) by converting them to strings. Atomic writes.
+**Features:** Writes standard JSON arrays (pretty-printed) or NDJSON. Handles complex data types (e.g., datetimes → strings).
+Uses atomic writes (temp file → rename) for reliability.
 
 ### Parquet
 Reads and writes Apache Parquet columnar files using PyArrow.
@@ -75,9 +81,9 @@ destinations:
     # compression: gzip # Optional: snappy (default), gzip, zstd
 ```
 
-**Features:** High-performance read/write. Supports common compression types. Atomic writes.
+**Features:** Supports ```snappy``` (default), ```gzip```, and ```zstd``` compression.
+Efficient columnar reads using PyArrow.
 
-## Cloud Storage Connectors
 ### S3 (AWS)
 
 Reads and writes files (currently CSV and JSON) from/to Amazon S3 buckets.
@@ -98,11 +104,11 @@ destinations:
     bucket: my-processed-data-bucket
     path: curated/users.json
 ```
-**Authentication:** Uses the standard AWS credentials chain:
-1. Environment variables (```AWS_ACCESS_KEY_ID```, ```AWS_SECRET_ACCESS_KEY```, ```AWS_REGION```).
-2. Shared credential file (```~/.aws/credentials```).
-3. AWS config file (```~/.aws/config```).
-4. AM role attached to an EC2 instance or ECS task. Features: Downloads/uploads files via temporary local storage. Includes retry logic for network errors.
+**Authentication:** Uses the standard AWS credentials chain (in order):
+1. Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`)
+2. `~/.aws/credentials`
+3. EC2/ECS/IAM role credentials if present
+
 
 ## Database & Data Warehouse Connectors
 ### PostgreSQL
