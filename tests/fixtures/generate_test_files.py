@@ -110,9 +110,9 @@ def generate_parquet_files():
 if __name__ == "__main__":
     print("🔧 Generating test fixtures...")
     generate_csv_files()
-    print("✅ CSV files generated")
+    print("[OK] CSV files generated")
     generate_json_files()
-    print("✅ JSON files generated")
+    print("[OK] JSON files generated")
     generate_parquet_files()
-    print("✅ Parquet files generated")
+    print("[OK] Parquet files generated")
     print(f"\n📁 All fixtures saved to: {FIXTURES_DIR}")

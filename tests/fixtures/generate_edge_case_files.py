@@ -52,7 +52,7 @@ def generate_edge_case_csv():
         writer.writeheader()
         writer.writerows(edge_cases)
     
-    print(f"✅ Created edge_cases.csv")
+    print(f"[OK] Created edge_cases.csv")
 
 
 def generate_types_csv():
@@ -97,7 +97,7 @@ def generate_types_csv():
             },
         ])
     
-    print(f"✅ Created data_types.csv")
+    print(f"[OK] Created data_types.csv")
 
 
 def generate_encoding_test_files():
@@ -119,7 +119,7 @@ def generate_encoding_test_files():
             {"id": 1, "name": "Café", "text": "Latin-1 encoding"},
         ])
     
-    print(f"✅ Created encoding test files")
+    print(f"[OK] Created encoding test files")
 
 
 def generate_edge_case_json():
@@ -152,7 +152,7 @@ def generate_edge_case_json():
     with open(FIXTURES_DIR / "edge_cases.json", "w", encoding="utf-8") as f:
         json.dump(edge_cases, f, indent=2, ensure_ascii=False)
     
-    print(f"✅ Created edge_cases.json")
+    print(f"[OK] Created edge_cases.json")
 
 
 def generate_edge_case_parquet():
@@ -173,7 +173,7 @@ def generate_edge_case_parquet():
     
     df.to_parquet(FIXTURES_DIR / "edge_cases.parquet", index=False)
     
-    print(f"✅ Created edge_cases.parquet")
+    print(f"[OK] Created edge_cases.parquet")
 
 
 if __name__ == "__main__":

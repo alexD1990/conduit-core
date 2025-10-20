@@ -152,7 +152,7 @@ class S3Destination(BaseDestination):
     def _upload_file(self, temp_path: str):
         """Upload file to S3 with retry logic."""
         self.s3_client.upload_file(temp_path, self.bucket, self.key)
-        logger.info(f"✅ Successfully uploaded to s3://{self.bucket}/{self.key}")
+        logger.info(f"[OK] Successfully uploaded to s3://{self.bucket}/{self.key}")
 
     def finalize(self):
         """Skriver alle akkumulerte records til S3."""

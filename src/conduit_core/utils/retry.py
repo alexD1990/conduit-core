@@ -43,13 +43,13 @@ def retry_with_backoff(
                     
                     if attempt == max_attempts:
                         logger.error(
-                            f"❌ Function '{func.__name__}' failed after {max_attempts} attempts. "
+                            f"[FAIL] Function '{func.__name__}' failed after {max_attempts} attempts. "
                             f"Last error: {e}"
                         )
                         raise
                     
                     logger.warning(
-                        f"⚠️  Attempt {attempt}/{max_attempts} failed for '{func.__name__}': {e}. "
+                        f"[WARN]️  Attempt {attempt}/{max_attempts} failed for '{func.__name__}': {e}. "
                         f"Retrying in {delay}s..."
                     )
                     

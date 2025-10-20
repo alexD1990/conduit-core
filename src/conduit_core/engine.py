@@ -47,7 +47,7 @@ def run_resource(
     logger.start_resource()
 
     if dry_run:
-        logger.info("DRY RUN MODE - Data will be read but not written", prefix="⚠")
+        logger.info("DRY RUN MODE - Data will be read but not written", prefix="[WARN]")
 
     manifest = PipelineManifest(manifest_path)
     checkpoint_mgr = CheckpointManager()
@@ -155,7 +155,7 @@ def run_resource(
                                     logger.error("Strict validation enabled - treating warnings as errors")
                                     raise SchemaValidationError(report)
 
-                            logger.info("✓ Schema validation passed")
+                            logger.info("[OK] Schema validation passed")
                         else:
                             logger.debug("Destination table does not exist - skipping schema validation")
 
@@ -206,7 +206,7 @@ def run_resource(
                                 logger.error(f"Schema evolution failed: {e}. Halting pipeline.")
                                 raise
                         else:
-                            logger.info("DRY RUN: Skipping schema evolution actions.", prefix="⚠")
+                            logger.info("DRY RUN: Skipping schema evolution actions.", prefix="[WARN]")
                     else:
                         logger.info("No schema changes detected.")
                 else:
@@ -234,7 +234,7 @@ def run_resource(
                                 logger.error(f"Failed to auto-create table: {e}")
                                 raise
                         else:
-                            logger.info("DRY RUN: Skipping table creation.", prefix="⚠")
+                            logger.info("DRY RUN: Skipping table creation.", prefix="[WARN]")
                     except ValueError as e:
                         logger.warning(f"Could not generate CREATE TABLE SQL (schema likely empty): {e}")
                     except Exception as e:

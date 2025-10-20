@@ -41,7 +41,7 @@ def load_state() -> Dict[str, Any]:
                 try:
                     with open(BACKUP_FILE, 'r') as f:
                         state = json.load(f)
-                        logger.info(f"✅ Loaded state from backup: {BACKUP_FILE}")
+                        logger.info(f"[OK] Loaded state from backup: {BACKUP_FILE}")
                         # Restore the main file from backup
                         save_state(state)
                         return state
@@ -181,7 +181,7 @@ def recover_state() -> Dict[str, Any]:
             with open(BACKUP_FILE, 'r') as f:
                 state = json.load(f)
                 if validate_state(state):
-                    logger.info("✅ State recovered from backup")
+                    logger.info("[OK] State recovered from backup")
                     save_state(state)  # Restore main file
                     return state
         except Exception as e:
