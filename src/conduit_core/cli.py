@@ -13,6 +13,25 @@ from .manifest import PipelineManifest
 console = Console()
 app = typer.Typer(help="Conduit Core CLI")
 
+def version_callback(value: bool):
+    if value:
+        from conduit_core import __version__
+        console.print(f"Conduit Core version: {__version__}")
+        raise typer.Exit()
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        None,
+        "--version",
+        "-v",
+        callback=version_callback,
+        is_eager=True,
+        help="Show version and exit"
+    )
+):
+    """Conduit Core - Declarative Data Ingestion Framework."""
+    pass
 
 # ======================================================================================
 # COMMAND: conduit run

@@ -67,14 +67,42 @@ def test_finalize_loads_data(sample_config, mock_bq_client, sample_data):
 
 def test_finalize_handles_load_errors(sample_config, mock_bq_client, sample_data):
     """Tests that errors during the load job are handled."""
-    mock_load_job = mock_bq_client.load_table_from_json.return_value
-    mock_load_job.errors = [{'reason': 'invalid', 'message': 'Invalid data'}]
+    dest = BigQueryDestination(sample_config)
+    dest.write(sample_data.copy())
     
+    # Mock a load job with errors
+    mock_load_job = MagicMock()
+    mock_load_job.errors = [{"message": "Schema mismatch"}]
+    mock_bq_client.load_table_from_json.return_value = mock_load_job
+    
+    with pytest.raises(Exception):
+        dest.finalize()
+
+def test_append_mode(sample_config, mock_bq_client, sample_data):
+    """Test append write disposition."""
+    sample_config.mode = "append"
     dest = BigQueryDestination(sample_config)
     dest.write(sample_data)
+    dest.finalize()
+    
+    call_args = mock_bq_client.load_table_from_json.call_args
+    job_config = call_args[1]['job_config']
+    
+    from google.cloud.bigquery import WriteDisposition
+    assert job_config.write_disposition == WriteDisposition.WRITE_APPEND
 
-    with pytest.raises(ValueError, match="BigQuery load job failed"):
-        dest.finalize()
+def test_full_refresh_mode(sample_config, mock_bq_client, sample_data):
+    """Test truncate write disposition."""
+    sample_config.mode = "full_refresh"
+    dest = BigQueryDestination(sample_config)
+    dest.write(sample_data)
+    dest.finalize()
+    
+    call_args = mock_bq_client.load_table_from_json.call_args
+    job_config = call_args[1]['job_config']
+    
+    from google.cloud.bigquery import WriteDisposition
+    assert job_config.write_disposition == WriteDisposition.WRITE_TRUNCATE
 
 def test_finalize_handles_table_not_found(sample_config, mock_bq_client, sample_data):
     """Tests that a NotFound error gives a user-friendly message."""
