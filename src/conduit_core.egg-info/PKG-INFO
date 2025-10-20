@@ -1,477 +1,323 @@
 Metadata-Version: 2.4
 Name: conduit-core
 Version: 1.0.0
-Summary: Declarative, Reliable, Testable Data Ingestion for the Modern Data Stack
-Author-email: alex <alex12060309@gmail.com>
+Summary: The VLC of data ingestion
+Author-email: alexandro dronnen <alex12060309@gmail.com>
+License: Business Source License 1.1
+        
+        Licensor: Alexandro Dronnen
+        Licensed Work: Conduit Core
+        The Licensed Work is (c) 2025 Alexandro Dronnen
+        
+        Additional Use Grant:
+        You may use this software free of charge for any purpose — personal, educational, or commercial — 
+        including within production environments and enterprise systems.
+        
+        The only restriction is that you may not use this software, or any modified version of it, 
+        to offer a managed service, hosted service, or Software-as-a-Service (SaaS) 
+        where the primary value of the service is derived from the Licensed Work itself, 
+        without obtaining a commercial license from the Licensor.
+        
+        Change Date: 1 January 2030
+        Change License: Apache License, Version 2.0
+        
+        On the Change Date, the Licensor will make the Licensed Work available under the 
+        Change License, as provided in the Business Source License 1.1.
+        
+        -------------------------------------------------------------------------------
+        This Business Source License (the "License") sets forth the terms under which the 
+        Licensor is providing the Licensed Work. Using the Licensed Work in any form means 
+        you agree to these terms.
+        
+        1. License Grant
+           The Licensor hereby grants you the right to copy, modify, create derivative works, 
+           redistribute, and make any internal or production use of the Licensed Work, 
+           subject to the limitations and conditions set forth below.
+        
+        2. Restrictions
+           The grant above does not include the right to use the Licensed Work for 
+           offering it as part of a hosted, managed, or Software-as-a-Service (SaaS) product 
+           where the primary value of the service is derived from the Licensed Work itself, 
+           without obtaining a commercial license from the Licensor.
+        
+           Example allowed uses:
+           - Embedding or using Conduit Core internally in your company's data pipelines.
+           - Running Conduit Core in production for your own systems or customers.
+           
+           Example restricted uses:
+           - Hosting Conduit Core as a paid cloud service or platform.
+           - Building a SaaS product that uses Conduit Core as its core engine.
+        
+        3. Change Date and License
+           On the Change Date specified above, the Licensed Work will automatically be made 
+           available under the Change License, which will then govern its use.
+        
+        4. Notices
+           You must include a copy of this License with all copies of the Licensed Work, 
+           and you must include attribution to the Licensor in any derivative works.
+        
+        5. Disclaimer
+           THE LICENSED WORK IS PROVIDED "AS IS" WITHOUT WARRANTIES OR CONDITIONS OF ANY 
+           KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF 
+           MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT. IN NO 
+           EVENT SHALL THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, 
+           WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM OR OUT OF 
+           THE USE OR INABILITY TO USE THE LICENSED WORK.
+        
+        -------------------------------------------------------------------------------
+        For more information on the Business Source License, see:
+        https://mariadb.com/bsl11
+        
 Requires-Python: >=3.12
 Description-Content-Type: text/markdown
 License-File: LICENSE
 Requires-Dist: typer[all]>=0.19.2
 Requires-Dist: pyyaml>=6.0.3
 Requires-Dist: pydantic>=2.11.9
+Requires-Dist: pyodbc>=5.2.0
 Requires-Dist: python-dotenv>=1.1.1
 Requires-Dist: pandas>=2.0.0
 Requires-Dist: pyarrow>=14.0.0
 Requires-Dist: boto3>=1.35.0
 Requires-Dist: psycopg2-binary>=2.9.0
 Requires-Dist: snowflake-connector-python>=3.0.0
+Requires-Dist: google-cloud-bigquery<4.0.0,>=3.38.0
 Provides-Extra: dev
 Requires-Dist: pytest>=8.4.2; extra == "dev"
 Requires-Dist: moto[s3]>=5.0.0; extra == "dev"
+Dynamic: license-file
 
 # Conduit Core
 
-**Declarative. Reliable. Testable.**  
-The **dbt of data ingestion** — a bulletproof open-source CLI for declarative, reliable, and testable data movement.
+**The dbt of data ingestion** - Declarative Data Movement Infrastructure for the Modern Data Stack.
 
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)]()
-[![Tests Passing](https://img.shields.io/badge/tests-173%20passing-brightgreen)]()
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)]()
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Poetry](https://img.shields.io/badge/dependency-poetry-blue)](https://python-poetry.org/)
+[![Tests Passing](https://img.shields.io/badge/tests-✔️%20passing-brightgreen)](./tests/)
+[![License](https://img.shields.io/badge/license-BSL--1.1-orange)](LICENSE)
 
-Conduit Core is an open-source, production-grade data ingestion engine for the modern data stack.  
-It focuses on **Extract & Load**, providing atomic operations, schema validation, and data quality enforcement — all from simple YAML.
+An **source-available**, **bulletproof CLI** for declarative, reliable, and testable data ingestion. Conduit Core is designed to be the **industry standard for the "Extract & Load** part of the modern data stack - the perfect companion to **dbt**.
 
----
+Source ──▶ Conduit Core ──▶ Destination (Retry, DLQ, Checkpoint)
 
-## Vision
+##  Why Conduit Core Now?
 
-Conduit Core moves any data between any sources without breaking. Our philosophy:
+Data engineers shouldn’t waste time maintaining brittle ingestion scripts.
+**dbt** made transformation declarative — **Conduit Core** brings that reliability and structure to ingestion.
 
-- ✅ **It just works** - Auto-detects formats, handles edge cases gracefully
-- ✅ **Never crashes** - Bulletproof error handling with retries and recovery
-- ✅ **Always transparent** - Real-time progress, detailed logs, dry-run mode
-- ✅ **Declarative** - Simple YAML configuration, version-controlled
-- ✅ **Production-ready** - Atomic state, checkpoints, resume capability
+* **Before:** Custom Python, inconsistent error handling, manual retries, no observability.
+* **After:** Simple YAML configs, checkpoint/resume, schema validation, and complete auditability.
 
----
+Move data confidently. Focus on modeling — not on plumbing.
 
-## Core Features (v1.0)
+## Core features
 
-* **Schema Validation:**  
-  Pre-flight checks for schema compatibility between source and destination.
+### Reliability
 
-* **Schema Evolution:**  
-  Automatically detect and handle schema drift (added/removed/changed columns).
+* Automatic retries and resumable jobs
+* Dead-letter queue (DLQ) for failed records
+* Atomic writes and streaming batch execution
 
-* **Data Quality Framework:**  
-  Define column-level validation rules (`not_null`, `regex`, `in_list`, `unique`, etc.) in YAML.
+### Schema Intelligence
 
-* **Atomic Operations:**  
-  File writes use temp files → rename; database writes are transactional.
+* **Schema Validation:** Detect breaking changes before execution
+* **Schema Evolution:** Plan and apply compatible schema updates
+* **Schema Compare CLI:** Detect added, removed, or changed columns
 
-* **Checkpoint & Resume:**  
-  Automatically resume long-running jobs from the last successful batch.
+### Data Quality
 
-* **Incremental Loading:**  
-  Process only new records using `incremental_column` with automatic state tracking.
+* Built-in validators for nulls, duplicates, regex, and ranges
+* Define rules per resource directly in YAML
+* Strict or warning-only modes
+* See docs/data-quality.md
 
-* **CLI Suite:**  
-  - `conduit run` — execute pipelines  
-  - `conduit validate` — check configuration and schema  
-  - `conduit schema` — infer or compare schemas  
-  - `conduit manifest` — view detailed run history
+### Declarative YAML Pipelines
 
-## Quick Start
+Define the “what,” not the “how.” Conduit builds and executes robust ingestion pipelines automatically.
 
-### Installation
+### Developer Experience
 
-Clone the repository
-```git clone https://github.com/alexD90/conduit-core.git```
+* Pre-flight validation via ```conduit validate```
+* Schema discovery with ```conduit schema```
+* Schema drift detection with ```conduit schema-compare```
+* Real-time progress bars and connection testing
 
-```cd conduit-core```
+### Observability
 
-Install with pip
-```pip install -e```
+* Built-in manifest logging every pipeline run
+* Queryable via ```conduit manifest```
+* Perfect for CI/CD auditing and lineage tracking
 
-### Verify installation
-```conduit --help```
+##  Quick Start
 
----
+### 1. Install
 
-# Your First Pipeline
-### 1. Create ```ingest.yml```:
+Requires Python 3.12+.
+
+```bash
+pip install conduit-core
+```
+Or install from source using Poetry 
+```bash
+poetry install
+```
+
+### 2. Define Your Pipeline (```ingest.yml```)
+
 ```yaml
 sources:
-  - name: my_csv_file
+  - name: local_users_csv
     type: csv
-    path: "./data/users.csv"
+    path: "./input_users.csv"
 
 destinations:
-  - name: output_json
+  - name: local_output_json
     type: json
-    path: "./output/users.json"
+    path: "./output_users.json"
+    indent: 2
 
 resources:
-  - name: csv_to_json
-    source: my_csv_file
-    destination: output_json
+  - name: csv_to_json_transfer
+    source: local_users_csv
+    destination: local_output_json
     query: "n/a"
 ```
 
-
-### 2. Create your source file (data/users.csv):
-```yaml
-id,name,email
-1,Alice,alice@example.com
-2,Bob,bob@example.com
-```
-
-### 3. Run the pipeline:
-```yaml
-conduit run
-
-Output:
-
- Starting Conduit Core run...
- csv_to_json ━━━━━━━━━━━━━━━━━━━━ 100% • 0:00:00 • 1234.5 rows/sec
-
- Summary for csv_to_json:
- • Rows processed: 2
- • Time elapsed: 0.01s
- • Throughput: 200.0 rows/sec
-
- Conduit Core run complete!
-```
-
- # Core Concepts
-
-## Sources
-Sources define where data comes from:
-
-### sources:
-```yaml
-  # Local CSV file (auto-detects delimiter and encoding)
-  - name: local_csv
-    type: csv
-    path: "./data/input.csv"
-  
-  # JSON file
-  - name: local_json
-    type: json
-    path: "./data/input.json"
-  
-  # Parquet file
-  - name: local_parquet
-    type: parquet
-    path: "./data/input.parquet"
-  
-```
-
-## Destinations
-Destinations define where data goes:
-
-### destinations:
-```yaml
-  # Local CSV output
-  - name: csv_output
-    type: csv
-    path: "./output/result.csv"
-  
-  # JSON output
-  - name: json_output
-    type: json
-    path: "./output/result.json"
-  
-```
-## Resources
-Resources connect sources to destinations:
-
-### resources:
-```yaml
-  # Simple transfer
-  - name: simple_transfer
-    source: local_csv
-    destination: json_output
-    query: "n/a"
-  
-    # With SQL query
-  - name: filtered_data
-    source: postgres_source
-    destination: csv_output
-    query: "SELECT * FROM users WHERE active = true"
-  
-  # Incremental loading
-  - name: new_orders_only
-    source: postgres_source
-    destination: json_output
-    incremental_column: order_id
-    query: "SELECT * FROM orders ORDER BY order_id"
-```
-## CLI Commands
-```conduit run```
-Run your data pipeline:
-```yaml
-# Basic run
-conduit run
-
-# Specify config file
-conduit run --file my_config.yml
-
-# Dry run (preview without writing)
-conduit run --dry-run
-
-# Verbose logging
-conduit run --verbose
-
-# Automatic resume
-# If a checkpoint exists from a failed run, Conduit Core resumes automatically.
-```
-## Test all connections before running:
-
-```conduit test```
-```yaml
-# Output:
- Testing connections...
- 
-# Sources:
- local_csv (csv): Connected
- postgres_source (postgres): Connected
- 
-# Destinations:
-#json_output (json): Connected
-```
-## Validate your configuration file
-
-```conduit validate```
-```yaml
-conduit validate
-
-# Output:
-  Validating configuration file: ingest.yml
-  Configuration is valid!
-```
-
-## Configuration & Secrets
-
-### Environment Variables (```.env```)
-### Store sensitive credentials in a ```.env``` file:
-```yaml
-# AWS (for future S3 connector)
-AWS_ACCESS_KEY_ID=your-key
-AWS_SECRET_ACCESS_KEY=your-secret
-```
-
-### Important: Add ```.env``` to your ```.gitignore```!
-
-
-## Supported Connectors (v1.0)
-
-| Category     | Sources (Read)              | Destinations (Write)            |
-|---------------|----------------------------|---------------------------------|
-| **Files**     | CSV, JSON, Parquet, S3     | CSV, JSON, Parquet, S3          |
-| **Databases** | PostgreSQL                 | PostgreSQL, Snowflake, BigQuery |
-
-
-# Advanced Features
-
-## Incremental Loading
-
-Only process new data using an `incremental_column`.  
-Conduit Core automatically appends a filter condition (`WHERE <column> > <stored state>`) — no placeholders required.
-
-```yaml
-resources:
-  - name: new_users
-    source: database
-    destination: data_lake
-    incremental_column: user_id
-    query: "SELECT * FROM users ORDER BY user_id"
-```
-
-### State is automatically tracked in ```.conduit_state.json```:
-```yaml
-{
-    "new_users": 12345
-}
-```
-On the next run, only records with ```user_id > 12345``` are fetched automatically
-
-## Resume from Failures
-
-### If a pipeline crashes mid-run, resume from the exact point:
-```yaml
-# Pipeline crashes at row 15,000 out of 100,000
-conduit run
-
-# Resume automatically after failure
-# Conduit Core detects an existing checkpoint and resumes automatically.
-# Skipped 15,000 already-processed rows
-# Processing continues from row 15,001
-```
-
-## Auto-Detection
-
-### Conduit automatically detects:
-
-- CSV delimiters: ```,``` ```;``` ```\t``` ```|```
-- File encodings: UTF-8, Latin-1, Windows-1252
-- Data types: integers, floats, booleans, dates, datetimes
-- NULL values: ```NULL```, ```None```, ```N/A```,empty strings
-
-## Schema Inference
-
-### Generate SQL tables automatically:
-```yaml
-from conduit_core.schema import SchemaInferrer, TableAutoCreator
-
-# Infer schema from data
-records = [{"id": 1, "name": "Alice", "age": 30}]
-schema = SchemaInferrer.infer_schema(records)
-
-# Generate CREATE TABLE statement
-sql = TableAutoCreator.generate_create_table_sql(
-    "users", 
-    schema, 
-    dialect="postgresql"
-)
-print(sql)
- CREATE TABLE IF NOT EXISTS users (
-   "id" INTEGER NOT NULL,
-   "name" TEXT NOT NULL,
-   "age" INTEGER NOT NULL
- );
-```
-
- ## Testing
-
-Conduit Core includes 173 passing tests covering:
-- CLI commands
-- Engine and state management
-- Schema inference and validation
-- Data quality checks
-- Connectors (CSV, JSON, Parquet, PostgreSQL, S3)
-
- ### Run the comprehensive test suite:
-Run tests with:
+### 3. Run it:
 ```bash
-# Run all tests
-pytest -v
-
-# Run specific test file
-pytest tests/test_config.py -v
-
-# Run with coverage
-pytest --cov=conduit_core --cov-report=html
-
-# Run integration tests only
-pytest tests/integration/ -v
+conduit run csv_to_json_transfer --file ingest.yml
 ```
 
-# Architecture
+Output written to ```./output_users.json```
 
-## Project Structure
-```yaml
-conduit-core/
-├── src/conduit_core/
-│   ├── batch.py 
-│   ├── checkpoint.py       # Resume capability           
-│   ├── cli.py              # CLI commands
-│   ├── config.py           # Configuration loading
-│   ├── engine.py           # Pipeline execution
-│   ├── errors.py           # Custom exceptions
-│   ├── logging_utils.py    
-│   ├── manifest.py   
-│   ├── quality.py 
-│   ├── schema_evolution.py
-│   ├── schema_store.py
-│   ├── schema_validator.py
-│   ├── schema.py           # Schema inference
-│   ├── state.py            # State management
-│   ├── types.py            # Type conversion
-│   ├── validators.py       # Data validation         
-│   └── connectors/
-│       ├── base.py         # Base classes
-│       ├── registry.py     # Auto-discovery
-|       |── bigquery.py     # BigQuery connector
-│       ├── csv.py          # CSV connector
-│       ├── json.py         # JSON connector
-│       ├── parquet.py      # parquet connector
-│       ├── s3.py           # S3 connector
-│       ├── snowflake.py    # SnowFlake connector
-├── tests/
-│   ├── test_*.py           # Unit tests
-│   ├── integration/        # Integration tests
-│   └── fixtures/           # Test data
-├── data/                   # Input data (gitignored)
-├── output/                 # Output data (gitignored)
-├── ingest.yml             # Pipeline configuration
-├── .env                   # Secrets (gitignored)
-└── README.md
+## Validation, Schema, and Quality
+### Validate a Resource
+```bash
+conduit validate csv_to_json_transfer --file ingest.yml
+```
+**Checks:**
+
+* Config syntax
+* Source & destination connectivity
+* Schema compatibility
+* Data quality rules
+* Required columns
+
+**Example Output:**
+```text
+ Conduit Pre-Flight Validation
+
+✓ Configuration loaded successfully
+✓ Source connection (csv)
+✓ Destination connection (json)
+✓ Inferred schema from 100 records
+✓ All required columns present
+✓ Quality checks passed
+────────────────────────────
+✓ All validations passed
+```
+### Compare Schemas
+```bash
+conduit schema-compare csv_to_json_transfer --file ingest.yml
 ```
 
-## Core Components
+**Output:**
+```text
+ Schema Comparison
 
-1. Config Layer - YAML parsing with Pydantic validation
-2. Connector Registry - Auto-discovers all connectors
-3. Engine - Orchestrates data flow with progress tracking
-4. State Manager - Atomic state persistence with backups
-5. Checkpoint System - Periodic progress saves for resume
-6. Validators - Data sanitization and validation
-7. Type System - Robust type conversion
-
----
-# Troubleshooting
-
-### Common Issues
-
-Problem: ```conduit: command not found```
-Solution:
-```yaml
-### Make sure you installed in editable mode
-pip install -e .
-
-### Or run directly
-python -m conduit_core.cli run
+ ADDED: signup_date (DATE)
+ CHANGED: amount FLOAT → DOUBLE
+────────────────────────────
+⚠ Review changes before next deployment
 ```
 
-Problem: CSV delimiter not detected correctly
-Solution:
+**Example: Data Quality Checks**
 ```yaml
-# Use verbose mode to see detection
-conduit run --verbose
-
-# Manually specify in config (future feature)
+resources:
+  - name: customers_to_pg
+    source: csv_source
+    destination: pg_dest
+    quality_checks:
+      - column: email
+        check: regex
+        pattern: "^[^@]+@[^@]+$"
+      - column: id
+        check: unique
 ```
 
-Problem: Database connection fails
-Solution:
-```yaml
-# Test connection first
-conduit test
-
-# Check your .env file
-cat .env
-
-Problem: Special characters garbled
-Solution:
-```yaml
-# Conduit auto-detects encoding, but you can verify:
-conduit run --verbose
-
-# Check source file encoding:
-file -i your_file.csv
+**Run:**
+```bash
+conduit validate customers_to_pg
 ```
 
-# Contributing
+**Output:**
+```yaml
+⚠ 2 records failed quality checks in sample
+✗ Validation failed
+```
+See docs/data-quality.md
+ for configuration details.
 
-Contributions are welcome! Areas we'd love help with:
+## CLI Commands Overview
+| Command                  | Description                                |
+| ------------------------ | ------------------------------------------ |
+| `conduit run`            | Execute pipeline                           |
+| `conduit validate`       | Validate config, schema, and quality rules |
+| `conduit schema`         | Infer and export source schema             |
+| `conduit schema-compare` | Compare current schema vs baseline         |
+| `conduit manifest`       | View run history and performance metrics   |
 
-- New Connectors (MySQL, MongoDB, REST APIs, etc.)
- - More Tests (especially edge cases)
- - Documentation (examples, tutorials)
- - Bug Fixes
- - Feature Requests
+Full CLI reference: docs/cli-reference.md
 
- # License
+## Supported Connectors 
 
- MIT License - see LICENSE file for details.
+| Category          | Sources (Read)     | Destinations (Write)            | Bidirectional   |
+| ----------------- | ------------------ | ------------------------------- | --------------- |
+| **Files**         | CSV, JSON, Parquet | CSV, JSON, Parquet              | Yes             |
+| **Cloud Storage** | S3                 | S3                              | Yes             |
+| **Databases**     | PostgreSQL         | PostgreSQL, Snowflake, BigQuery | PostgreSQL only |
 
- # Acknowledgments
+Note: `DummySource` and `DummyDestination` are provided for testing and validation purposes.
 
- Built with:
+Snowflake and BigQuery are destination-only connectors.
+DummySource and DummyDestination exist for testing and validation.
 
-- Typer - CLI framework
-- Rich - Beautiful terminal output
-- Pydantic - Data validation
-- Pandas - Data manipulation
-- PyArrow - Parquet support
+(See docs/connectors.md
+ for setup details.)
+
+## Advanced Features
+| Feature                 | Description                      |
+| ----------------------- | -------------------------------- |
+| **Checkpoint & Resume** | Resume jobs from last checkpoint |
+| **Dry-Run Mode**        | Preview transformations safely   |
+| **Manifest**            | Full run audit trail             |
+| **Incremental Loads**   | Process only new data            |
+| **Error Handling**      | Automatic retries + DLQ storage  |
+
+Incremental loading is configured using the ```incremental_column``` field.
+The engine automatically appends a ```WHERE <column> > <last_value>``` clause when a previous state exists — you do not need to use placeholders.
+
+## Roadmap
+### v1.0 (Current)
+
+* CLI Validation System (```conduit validate```)
+* Schema Evolution & Drift Detection
+* Data Quality Framework
+* Checkpoints & Resume System
+
+ ### v1.2
+
+* Incremental Sync & Change Data Capture (CDC)
+* Redshift & Azure Connectors
+* Cloud Telemetry & Conduit Cloud
+* Web UI for Orchestration
+
+See ```docs/roadmap.md```
+ for progress.
+
+## License
+
+This project is licensed under the **Business Source License 1.1 (BSL-1.1)**.
+It automatically converts to **Apache 2.0** on **January 1, 2030**.
+See LICENSE
+ for details.

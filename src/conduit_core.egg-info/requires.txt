@@ -8,6 +8,7 @@ pyarrow>=14.0.0
 boto3>=1.35.0
 psycopg2-binary>=2.9.0
 snowflake-connector-python>=3.0.0
+google-cloud-bigquery<4.0.0,>=3.38.0
 
 [dev]
 pytest>=8.4.2

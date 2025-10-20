@@ -1,6 +1,6 @@
 [project]
 name = "conduit-core"
-version = "0.1.0"
+version = "1.0.0"
 description = "The VLC of data ingestion"
 authors = [
     {name = "alexandro dronnen", email = "alex12060309@gmail.com"}
