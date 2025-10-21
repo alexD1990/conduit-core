@@ -125,8 +125,6 @@ def run_resource(
             # --- Pre-flight Schema Validation (Phase 3) ---
             # After: inferred_schema = SchemaInferrer.infer_schema(...)
             if destination_config.validate_schema and inferred_schema:
-                from .schema_validator import SchemaValidator
-                from .errors import SchemaValidationError
 
                 validator = SchemaValidator()
                 logger.info("Running pre-flight schema validation...")
