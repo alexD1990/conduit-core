@@ -21,7 +21,7 @@ import yaml
 from .schema import SchemaInferrer, TableAutoCreator
 from .schema_store import SchemaStore
 from .schema_evolution import SchemaEvolutionManager, SchemaEvolutionError
-from .quality import QualityValidator
+from .quality import QualityValidator, QualityAction
 from .errors import DataQualityError, ErrorLog, SchemaValidationError
 from .schema_validator import SchemaValidator, ValidationReport, ValidationError
 
