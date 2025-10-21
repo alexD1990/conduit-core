@@ -23,3 +23,5 @@ test_csv_to_csv.yml
 manifest.jsongoogle-cloud-sdk/
 manifest.json
 remove_emojis.py
+build/
+dist/
