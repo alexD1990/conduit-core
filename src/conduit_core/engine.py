@@ -222,7 +222,20 @@ def run_resource(
                     logger.info(f"Auto-creating table in {destination_config.type}...")
                     dialect_map = {'postgres': 'postgresql', 'snowflake': 'snowflake', 'bigquery': 'bigquery'}
                     try:
-                        create_sql = TableAutoCreator.generate_create_table_sql(destination_config.table, inferred_schema, dialect_map[destination_config.type])
+                        # For Snowflake, include database.schema prefix
+                        if destination_config.type == 'snowflake':
+                            full_table_name = f'{destination.database}.{destination.db_schema}.{destination_config.table}'
+                        else:
+                            full_table_name = destination_config.table
+
+                        create_sql = TableAutoCreator.generate_create_table_sql(full_table_name, inferred_schema, dialect_map[destination_config.type])
+
+                        # For Snowflake, fix the quoting in generated SQL
+                        if destination_config.type == 'snowflake':
+                            # Replace "database.schema.table" with database.schema."table"
+                            quoted_full = f'"{destination.database}.{destination.db_schema}.{destination_config.table}"'
+                            unquoted_path = f'{destination.database}.{destination.db_schema}."{destination_config.table}"'
+                            create_sql = create_sql.replace(quoted_full, unquoted_path)
                         logger.info(f"Generated SQL:\n{create_sql}")
                         if not dry_run:
                             try:
