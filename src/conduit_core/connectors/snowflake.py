@@ -182,7 +182,7 @@ class SnowflakeDestination(BaseDestination):
         cursor.execute(f"PUT file://{temp_csv_path} @{stage_name} AUTO_COMPRESS=TRUE OVERWRITE=TRUE")
         
         copy_command = f"""
-            COPY INTO {self.database}.{self.db_schema}.{self.table}
+            COPY INTO {self.database}.{self.db_schema}."{self.table}"
             FROM @{stage_name}/{csv_filename}.gz
             FILE_FORMAT = (TYPE = CSV FIELD_OPTIONALLY_ENCLOSED_BY = '"' SKIP_HEADER = 1)
             ON_ERROR = ABORT_STATEMENT
