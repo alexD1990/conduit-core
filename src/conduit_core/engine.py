@@ -218,9 +218,9 @@ def run_resource(
 
             # Auto-create table
             if destination_config.auto_create_table and inferred_schema:
-                if destination_config.type in ['postgresql', 'snowflake', 'bigquery']:
+                if destination_config.type in ['postgres', 'snowflake', 'bigquery']:
                     logger.info(f"Auto-creating table in {destination_config.type}...")
-                    dialect_map = {'postgresql': 'postgresql', 'snowflake': 'snowflake', 'bigquery': 'bigquery'}
+                    dialect_map = {'postgres': 'postgresql', 'snowflake': 'snowflake', 'bigquery': 'bigquery'}
                     try:
                         create_sql = TableAutoCreator.generate_create_table_sql(destination_config.table, inferred_schema, dialect_map[destination_config.type])
                         logger.info(f"Generated SQL:\n{create_sql}")
