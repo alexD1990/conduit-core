@@ -9,8 +9,7 @@ from dataclasses import dataclass, asdict
 
 @dataclass
 class ManifestEntry:
-    """Single pipeline execution entry."""
-
+    run_id: str
     pipeline_name: str
     source_type: str
     destination_type: str
@@ -23,6 +22,8 @@ class ManifestEntry:
     duration_seconds: float
     error_message: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+    preflight_duration_s: Optional[float] = None
+    preflight_warnings: Optional[list] = None
 
 
 class PipelineManifest:
@@ -84,17 +85,25 @@ class ManifestTracker:
         destination_type: str,
         metadata: Optional[Dict[str, Any]] = None
     ):
+        import uuid
+        from datetime import datetime
+
         self.manifest = manifest
         self.pipeline_name = pipeline_name
         self.source_type = source_type
         self.destination_type = destination_type
         self.metadata = metadata or {}
-
         self.started_at: Optional[datetime] = None
         self.records_read = 0
         self.records_written = 0
         self.records_failed = 0
         self.error_message: Optional[str] = None
+
+        # Generate unique run ID
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.run_id = f"run_{timestamp}_{uuid.uuid4().hex[:6]}" 
+        self.preflight_duration_s: Optional[float] = None  
+        self.preflight_warnings: Optional[list] = None  
 
     def __enter__(self):
         self.started_at = datetime.now(timezone.utc)
@@ -112,6 +121,7 @@ class ManifestTracker:
             status = "partial"
 
         entry = ManifestEntry(
+            run_id=self.run_id,
             pipeline_name=self.pipeline_name,
             source_type=self.source_type,
             destination_type=self.destination_type,
@@ -123,6 +133,8 @@ class ManifestTracker:
             records_failed=self.records_failed,
             duration_seconds=duration,
             error_message=self.error_message,
+            preflight_duration_s=self.preflight_duration_s,  
+            preflight_warnings=self.preflight_warnings,  
             metadata=self.metadata
         )
 
