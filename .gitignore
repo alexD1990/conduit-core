@@ -25,3 +25,5 @@ manifest.json
 remove_emojis.py
 build/
 dist/
+*.backup
+test_schema.json
