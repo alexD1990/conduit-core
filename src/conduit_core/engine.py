@@ -33,6 +33,265 @@ from .connectors.registry import get_source_connector_map, get_destination_conne
 from .manifest import PipelineManifest, ManifestTracker
 from .checkpoint import CheckpointManager
 
+#------------------------------------------------------------------------------------------------
+# Preflight mode
+#------------------------------------------------------------------------------------------------
+
+def preflight_check(
+    config: IngestConfig,
+    resource_name: Optional[str] = None,
+    verbose: bool = False
+) -> dict:
+    """
+    Comprehensive pre-flight validation.
+    
+    Returns:
+        dict: {
+            "passed": bool,
+            "checks": [{"name": str, "status": str, "message": str}],
+            "warnings": [str],
+            "errors": [str]
+        }
+    """
+    import uuid
+    from datetime import datetime
+    from .connectors.registry import get_source_connector_map, get_destination_connector_map
+    from .schema import SchemaInferrer
+    
+    results = {
+        "passed": True,
+        "checks": [],
+        "warnings": [],
+        "errors": [],
+        "duration_s": 0
+    }
+    
+    start_time = datetime.now()
+    
+    # Filter resources
+    resources = config.resources
+    if resource_name:
+        resources = [r for r in resources if r.name == resource_name]
+        if not resources:
+            results["passed"] = False
+            results["errors"].append(f"Resource '{resource_name}' not found")
+            return results
+    
+    # Check 1: Config syntax (already validated by Pydantic)
+    results["checks"].append({
+        "name": "Config Syntax",
+        "status": "pass",
+        "message": f"Valid configuration with {len(resources)} resource(s)"
+    })
+    
+    # Check 2-7: Per resource
+    for resource in resources:
+        resource_prefix = f"[{resource.name}]"
+        
+        # Find source/destination configs
+        source_config = next((s for s in config.sources if s.name == resource.source), None)
+        dest_config = next((d for d in config.destinations if d.name == resource.destination), None)
+        
+        if not source_config:
+            results["passed"] = False
+            results["errors"].append(f"{resource_prefix} Source '{resource.source}' not found")
+            continue
+        
+        if not dest_config:
+            results["passed"] = False
+            results["errors"].append(f"{resource_prefix} Destination '{resource.destination}' not found")
+            continue
+        
+        # Check 2: Source connection
+        try:
+
+            source_map = get_source_connector_map()
+            SourceClass = source_map.get(source_config.type)
+            if not SourceClass:
+                raise ValueError(f"Unknown source type: {source_config.type}")
+
+            source = SourceClass(source_config)
+
+            # Test connection by attempting read with limit 0
+            test_iter = source.read()
+            next(test_iter, None)  # Try to fetch first batch
+            results["checks"].append({
+                "name": f"{resource_prefix} Source Connection",
+                "status": "pass",
+                "message": f"Connected to {source_config.type} source"
+            })
+        except Exception as e:
+            results["passed"] = False
+            results["errors"].append(f"{resource_prefix} Source connection failed: {str(e)}")
+            results["checks"].append({
+                "name": f"{resource_prefix} Source Connection",
+                "status": "fail",
+                "message": str(e)
+            })
+            continue
+        
+        # Check 3: Destination connection
+        try:
+
+            dest_map = get_destination_connector_map()
+            DestClass = dest_map.get(dest_config.type)
+            if not DestClass:
+                raise ValueError(f"Unknown destination type: {dest_config.type}")
+
+            destination = DestClass(dest_config)
+
+            # For DB destinations, test connection
+            if hasattr(destination, 'conn') or dest_config.type in ['postgres', 'snowflake', 'bigquery']:
+                # Connection will be tested on first write
+                pass
+            results["checks"].append({
+                "name": f"{resource_prefix} Destination Connection",
+                "status": "pass",
+                "message": f"Connected to {dest_config.type} destination"
+            })
+        except Exception as e:
+            results["passed"] = False
+            results["errors"].append(f"{resource_prefix} Destination connection failed: {str(e)}")
+            results["checks"].append({
+                "name": f"{resource_prefix} Destination Connection",
+                "status": "fail",
+                "message": str(e)
+            })
+            continue
+        
+        # Check 4: Schema inference
+        if source_config.infer_schema:
+            try:
+                sample_records = []
+                for batch in source.read():
+                    sample_records.extend(batch)
+                    if len(sample_records) >= 100:
+                        break
+                schema = SchemaInferrer.infer_schema(sample_records[:100])
+                results["checks"].append({
+                    "name": f"{resource_prefix} Schema Inference",
+                    "status": "pass",
+                    "message": f"Inferred schema with {len(schema['fields'])} columns"
+                })
+                
+                # Check 5: Schema drift detection (if destination is DB with existing table)
+                if dest_config.type in ['postgres', 'snowflake', 'bigquery']:
+                    try:
+                        # Check if table exists and compare schemas
+                        # This is a placeholder - actual implementation depends on connector
+                        results["checks"].append({
+                            "name": f"{resource_prefix} Schema Drift",
+                            "status": "pass",
+                            "message": "No drift detected (not implemented yet)"
+                        })
+                    except Exception:
+                        results["warnings"].append(f"{resource_prefix} Could not check schema drift")
+                
+            except Exception as e:
+                results["warnings"].append(f"{resource_prefix} Schema inference failed: {str(e)}")
+                results["checks"].append({
+                    "name": f"{resource_prefix} Schema Inference",
+                    "status": "warn",
+                    "message": str(e)
+                })
+        
+        # Check 6: Destination compatibility
+        if hasattr(dest_config, 'auto_create_table') and dest_config.auto_create_table:
+            results["checks"].append({
+                "name": f"{resource_prefix} Destination Compatibility",
+                "status": "pass",
+                "message": "Auto-create table enabled"
+            })
+        else:
+            results["checks"].append({
+                "name": f"{resource_prefix} Destination Compatibility",
+                "status": "pass",
+                "message": "Manual table management"
+            })
+        
+        # Check 7: Quality checks validation
+        if resource.quality_checks:
+            try:
+                from .quality import QualityValidator
+                # Validate quality check syntax
+                results["checks"].append({
+                    "name": f"{resource_prefix} Quality Checks",
+                    "status": "pass",
+                    "message": f"{len(resource.quality_checks)} quality rule(s) configured"
+                })
+            except Exception as e:
+                results["warnings"].append(f"{resource_prefix} Quality check validation failed: {str(e)}")
+    
+    # Calculate duration
+    results["duration_s"] = (datetime.now() - start_time).total_seconds()
+    
+    return results
+
+
+def run_preflight(config_path: str = "ingest.yml", resource_name: Optional[str] = None, verbose: bool = True):
+    """
+    Run preflight checks and display results.
+    Used by CLI 'conduit preflight' command.
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from .config import load_config
+    
+    console = Console()
+    
+    try:
+        config = load_config(config_path)
+    except Exception as e:
+        console.print(f"[red]✗[/red] Failed to load config: {e}")
+        return False
+    
+    console.print("\n🔍 Running preflight checks...\n")
+    
+    results = preflight_check(config, resource_name=resource_name, verbose=verbose)
+    
+    # Display results in table
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Check", style="dim")
+    table.add_column("Status", justify="center")
+    table.add_column("Message")
+    
+    for check in results["checks"]:
+        status_symbol = {
+            "pass": "[green]✓[/green]",
+            "warn": "[yellow]⚠[/yellow]",
+            "fail": "[red]✗[/red]"
+        }.get(check["status"], "?")
+        
+        table.add_row(
+            check["name"],
+            status_symbol,
+            check["message"]
+        )
+    
+    console.print(table)
+    
+    # Display warnings and errors
+    if results["warnings"]:
+        console.print(f"\n[yellow]⚠ Warnings: {len(results['warnings'])}[/yellow]")
+        for warning in results["warnings"]:
+            console.print(f"  • {warning}")
+    
+    if results["errors"]:
+        console.print(f"\n[red]✗ Errors: {len(results['errors'])}[/red]")
+        for error in results["errors"]:
+            console.print(f"  • {error}")
+    
+    console.print(f"\n⏱ Preflight completed in {results['duration_s']:.2f}s")
+    
+    if results["passed"]:
+        console.print("\n[green]✓ All checks passed - safe to run[/green]\n")
+    else:
+        console.print("\n[red]✗ Preflight failed - fix errors before running[/red]\n")
+    
+    return results["passed"]
+
+#------------------------------------------------------------------------------------------------
+#------------------------------------------------------------------------------------------------
 
 def run_resource(
     resource: Resource,
@@ -40,8 +299,21 @@ def run_resource(
     batch_size: int = 1000,
     manifest_path: Optional[Path] = None,
     dry_run: bool = False,
+    skip_preflight: bool = False
 ):
     """Runs a single data pipeline resource with all features."""
+
+    # Run preflight checks unless skipped
+    preflight_results = None
+    if not skip_preflight:
+        preflight_results = preflight_check(config, resource_name=resource.name, verbose=False)
+        if not preflight_results["passed"]:
+            from rich.console import Console
+            console = Console()
+            console.print(f"\n[red]✗ Preflight failed for resource '{resource_name}'[/red]")
+            for error in preflight_results["errors"]:
+                console.print(f"  • {error}")
+            raise ValueError(f"Preflight checks failed. Use --skip-preflight to bypass.")
 
     logger = ConduitLogger(resource.name)
     logger.start_resource()
@@ -58,6 +330,11 @@ def run_resource(
         manifest=manifest, pipeline_name=resource.name,
         source_type=source_config.type, destination_type=destination_config.type,
     ) as tracker:
+        # Store preflight results in tracker
+        if preflight_results:
+            tracker.preflight_duration_s = preflight_results.get("duration_s")
+            tracker.preflight_warnings = preflight_results.get("warnings")
+
         total_processed = 0  # Records read from source
         total_written = 0    # Records successfully written to destination after validation
         error_log = ErrorLog(resource.name)

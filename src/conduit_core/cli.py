@@ -7,7 +7,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .config import load_config
-from .engine import run_resource, get_source_connector_map, get_destination_connector_map
+from .engine import run_resource, get_source_connector_map, get_destination_connector_map, run_preflight
 from .manifest import PipelineManifest
 
 console = Console()
@@ -38,10 +38,12 @@ def main(
 # ======================================================================================
 @app.command()
 def run(
-    config_file: Path = typer.Option("ingest.yml", "--file", "-f", help="Path to ingest.yml"),
-    resource_name: Optional[str] = typer.Argument(None, help="Specific resource to run"),
+    config_file: Path = typer.Argument("ingest.yml", help="Path to ingest.yml"),
+    resource_name: Optional[str] = typer.Option(None, "--resource", "-r", help="Specific resource to run"),
     dry_run: bool = typer.Option(False, "--dry-run", "-d", help="Simulate without executing writes"),
+    skip_preflight: bool = typer.Option(False, "--skip-preflight", help="Skip preflight checks"),
 ):
+
     """Execute a data pipeline resource."""
     console.print("\n[bold cyan]🚀 Conduit Run[/bold cyan]\n")
 
@@ -59,7 +61,7 @@ def run(
     for r in resources:
         console.print(f"[bold]Running resource:[/bold] {r.name}")
         try:
-            run_resource(r, config, dry_run=dry_run)
+            run_resource(r, config, dry_run=dry_run, skip_preflight=skip_preflight)
         except Exception as e:
             console.print(f"[red]✗ Resource '{r.name}' failed: {e}[/red]")
             raise typer.Exit(code=1)
@@ -67,6 +69,23 @@ def run(
     console.print(Panel("[green bold][OK] Pipeline completed successfully[/green bold]", border_style="green"))
     raise typer.Exit(code=0)
 
+# ======================================================================================
+# COMMAND: conduit preflight
+# ======================================================================================
+@app.command()
+def preflight(
+    config_file: Path = typer.Argument("ingest.yml", help="Path to ingest.yml"),
+    resource_name: Optional[str] = typer.Option(None, "--resource", "-r", help="Specific resource to check"),
+):
+    """Run preflight health checks without executing pipeline."""
+    from .engine import run_preflight
+    
+    try:
+        passed = run_preflight(str(config_file), resource_name=resource_name, verbose=True)
+        raise typer.Exit(code=0 if passed else 1)
+    except Exception as e:
+        console.print(f"[red]✗ Preflight failed: {e}[/red]")
+        raise typer.Exit(code=1)
 
 # ======================================================================================
 # COMMAND: conduit manifest
