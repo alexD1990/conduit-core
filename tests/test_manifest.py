@@ -23,7 +23,7 @@ def manifest(manifest_path):
 
 def test_manifest_entry_creation():
     """Test creating a manifest entry."""
-    entry = ManifestEntry(
+    entry = ManifestEntry(run_id="test_run_id", 
         pipeline_name="test_pipeline",
         source_type="csv",
         destination_type="postgresql",
@@ -43,7 +43,7 @@ def test_manifest_entry_creation():
 
 def test_manifest_add_entry(manifest, manifest_path):
     """Test adding entries to manifest."""
-    entry = ManifestEntry(
+    entry = ManifestEntry(run_id="test_run_id", 
         pipeline_name="test_pipeline",
         source_type="csv",
         destination_type="postgresql",
@@ -66,7 +66,7 @@ def test_manifest_persistence(manifest_path):
     """Test that manifest persists across instances."""
     manifest1 = PipelineManifest(manifest_path)
     
-    entry = ManifestEntry(
+    entry = ManifestEntry(run_id="test_run_id", 
         pipeline_name="test_pipeline",
         source_type="csv",
         destination_type="postgresql",
@@ -90,7 +90,7 @@ def test_manifest_persistence(manifest_path):
 
 def test_manifest_get_latest(manifest):
     """Test getting latest run for a pipeline."""
-    entry1 = ManifestEntry(
+    entry1 = ManifestEntry(run_id="test_run_id", 
         pipeline_name="pipeline_a",
         source_type="csv",
         destination_type="postgresql",
@@ -103,7 +103,7 @@ def test_manifest_get_latest(manifest):
         duration_seconds=60.0
     )
     
-    entry2 = ManifestEntry(
+    entry2 = ManifestEntry(run_id="test_run_id", 
         pipeline_name="pipeline_a",
         source_type="csv",
         destination_type="postgresql",
@@ -127,7 +127,7 @@ def test_manifest_get_latest(manifest):
 
 def test_manifest_get_all_filtered(manifest):
     """Test getting all runs filtered by pipeline name."""
-    entry1 = ManifestEntry(
+    entry1 = ManifestEntry(run_id="test_run_id", 
         pipeline_name="pipeline_a",
         source_type="csv",
         destination_type="postgresql",
@@ -140,7 +140,7 @@ def test_manifest_get_all_filtered(manifest):
         duration_seconds=60.0
     )
     
-    entry2 = ManifestEntry(
+    entry2 = ManifestEntry(run_id="test_run_id", 
         pipeline_name="pipeline_b",
         source_type="csv",
         destination_type="postgresql",
@@ -164,7 +164,7 @@ def test_manifest_get_all_filtered(manifest):
 
 def test_manifest_get_failed_runs(manifest):
     """Test getting failed runs."""
-    entry1 = ManifestEntry(
+    entry1 = ManifestEntry(run_id="test_run_id", 
         pipeline_name="pipeline_a",
         source_type="csv",
         destination_type="postgresql",
@@ -177,7 +177,7 @@ def test_manifest_get_failed_runs(manifest):
         duration_seconds=60.0
     )
     
-    entry2 = ManifestEntry(
+    entry2 = ManifestEntry(run_id="test_run_id", 
         pipeline_name="pipeline_b",
         source_type="csv",
         destination_type="postgresql",

@@ -169,3 +169,31 @@ class BigQueryDestination(BaseDestination):
             raise
         finally:
             self.accumulated_records.clear()
+
+    def table_exists(self) -> bool:
+        """Check if the destination table exists."""
+        try:
+            from google.cloud.exceptions import NotFound
+            self.client.get_table(self.table_id)
+            return True
+        except NotFound:
+            return False
+        except Exception as e:
+            raise ValueError(f"Failed to check table existence: {e}")
+
+    def get_table_schema(self) -> dict:
+        """Get schema of existing table."""
+        try:
+            table = self.client.get_table(self.table_id)
+            
+            columns = []
+            for field in table.schema:
+                columns.append({
+                    "name": field.name,
+                    "type": field.field_type,
+                    "nullable": field.mode != 'REQUIRED'
+                })
+            
+            return {"columns": columns}
+        except Exception as e:
+            raise ValueError(f"Failed to get table schema: {e}")

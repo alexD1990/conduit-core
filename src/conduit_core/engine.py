@@ -131,24 +131,51 @@ def preflight_check(
             continue
         
         # Check 3: Destination connection
+        table_exists = False
         try:
-
             dest_map = get_destination_connector_map()
             DestClass = dest_map.get(dest_config.type)
             if not DestClass:
                 raise ValueError(f"Unknown destination type: {dest_config.type}")
-
             destination = DestClass(dest_config)
-
-            # For DB destinations, test connection
-            if hasattr(destination, 'conn') or dest_config.type in ['postgres', 'snowflake', 'bigquery']:
-                # Connection will be tested on first write
-                pass
+            
             results["checks"].append({
                 "name": f"{resource_prefix} Destination Connection",
                 "status": "pass",
                 "message": f"Connected to {dest_config.type} destination"
             })
+            
+            # Check 3b: Table existence (for DB destinations)
+            if dest_config.type in ['postgres', 'snowflake', 'bigquery'] and hasattr(destination, 'table_exists'):
+                try:
+                    table_exists = destination.table_exists()
+                    
+                    if not table_exists:
+                        if hasattr(dest_config, 'auto_create_table') and dest_config.auto_create_table:
+                            results["checks"].append({
+                                "name": f"{resource_prefix} Table Existence",
+                                "status": "pass",
+                                "message": "Table will be auto-created"
+                            })
+                        else:
+                            results["passed"] = False
+                            table_name = getattr(dest_config, 'table', 'unknown')
+                            results["errors"].append(f"{resource_prefix} Table '{table_name}' does not exist and auto_create_table is disabled")
+                            results["checks"].append({
+                                "name": f"{resource_prefix} Table Existence",
+                                "status": "fail",
+                                "message": f"Table '{table_name}' not found"
+                            })
+                    else:
+                        table_name = getattr(dest_config, 'table', 'unknown')
+                        results["checks"].append({
+                            "name": f"{resource_prefix} Table Existence",
+                            "status": "pass",
+                            "message": f"Table '{table_name}' exists"
+                        })
+                except Exception as e:
+                    results["warnings"].append(f"{resource_prefix} Could not check table existence: {str(e)}")
+                    
         except Exception as e:
             results["passed"] = False
             results["errors"].append(f"{resource_prefix} Destination connection failed: {str(e)}")
@@ -160,33 +187,61 @@ def preflight_check(
             continue
         
         # Check 4: Schema inference
+        schema = None
         if source_config.infer_schema:
             try:
+                # Sample records from source
                 sample_records = []
                 for batch in source.read():
-                    sample_records.extend(batch)
+                    # batch is either a dict (single record) or list of dicts
+                    if isinstance(batch, dict):
+                        sample_records.append(batch)
+                    elif isinstance(batch, list):
+                        sample_records.extend(batch)
+                    
                     if len(sample_records) >= 100:
                         break
                 schema = SchemaInferrer.infer_schema(sample_records[:100])
+
                 results["checks"].append({
                     "name": f"{resource_prefix} Schema Inference",
                     "status": "pass",
-                    "message": f"Inferred schema with {len(schema['fields'])} columns"
+                    "message": f"Inferred schema with {len(schema.get('columns', []))} columns"
                 })
                 
-                # Check 5: Schema drift detection (if destination is DB with existing table)
-                if dest_config.type in ['postgres', 'snowflake', 'bigquery']:
+                # Check 5: Schema drift detection (if table exists)
+                if table_exists and dest_config.type in ['postgres', 'snowflake', 'bigquery'] and hasattr(destination, 'get_table_schema'):
                     try:
-                        # Check if table exists and compare schemas
-                        # This is a placeholder - actual implementation depends on connector
-                        results["checks"].append({
-                            "name": f"{resource_prefix} Schema Drift",
-                            "status": "pass",
-                            "message": "No drift detected (not implemented yet)"
-                        })
-                    except Exception:
-                        results["warnings"].append(f"{resource_prefix} Could not check schema drift")
-                
+                        from .schema import compare_schemas
+                        dest_schema = destination.get_table_schema()
+                        drift = compare_schemas(schema, dest_schema)
+                        
+                        if drift['added'] or drift['removed'] or drift['changed']:
+                            drift_msg = []
+                            if drift['added']:
+                                drift_msg.append(f"Added: {', '.join(drift['added'])}")
+                            if drift['removed']:
+                                drift_msg.append(f"Removed: {', '.join(drift['removed'])}")
+                            if drift['changed']:
+                                changes = [f"{col} ({change})" for col, change in drift['changed'].items()]
+                                drift_msg.append(f"Changed: {', '.join(changes)}")
+                            
+                            full_msg = "; ".join(drift_msg)
+                            results["warnings"].append(f"{resource_prefix} Schema drift: {full_msg}")
+                            results["checks"].append({
+                                "name": f"{resource_prefix} Schema Drift",
+                                "status": "warn",
+                                "message": full_msg
+                            })
+                        else:
+                            results["checks"].append({
+                                "name": f"{resource_prefix} Schema Drift",
+                                "status": "pass",
+                                "message": "No drift detected"
+                            })
+                    except Exception as e:
+                        results["warnings"].append(f"{resource_prefix} Could not check schema drift: {str(e)}")
+                        
             except Exception as e:
                 results["warnings"].append(f"{resource_prefix} Schema inference failed: {str(e)}")
                 results["checks"].append({

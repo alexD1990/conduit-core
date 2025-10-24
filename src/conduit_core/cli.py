@@ -82,11 +82,14 @@ def preflight(
     
     try:
         passed = run_preflight(str(config_file), resource_name=resource_name, verbose=True)
-        raise typer.Exit(code=0 if passed else 1)
+    except typer.Exit:
+        raise  # Re-raise typer.Exit without catching it
     except Exception as e:
         console.print(f"[red]✗ Preflight failed: {e}[/red]")
         raise typer.Exit(code=1)
-
+    
+    # Exit with appropriate code
+    raise typer.Exit(code=0 if passed else 1)
 # ======================================================================================
 # COMMAND: conduit manifest
 # ======================================================================================

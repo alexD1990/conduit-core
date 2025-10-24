@@ -487,3 +487,59 @@ class TableAutoCreator:
                 'string': 'VARCHAR(255)',
                 'json': 'VARCHAR(8000)' # Example length
             }
+
+
+def compare_schemas(source_schema: dict, dest_schema: dict) -> dict:
+    """
+    Compare two schemas and return differences.
+    
+    Returns:
+        dict: {
+            "added": [column_names],
+            "removed": [column_names],
+            "changed": {column_name: "type_change_description"}
+        }
+    """
+    source_cols = {col["name"]: col for col in source_schema.get("columns", [])}
+    dest_cols = {col["name"]: col for col in dest_schema.get("columns", [])}
+    
+    added = [name for name in source_cols if name not in dest_cols]
+    removed = [name for name in dest_cols if name not in source_cols]
+    
+    changed = {}
+    for name in source_cols:
+        if name in dest_cols:
+            source_type = source_cols[name].get("type", "").lower()
+            dest_type = dest_cols[name].get("type", "").lower()
+            
+            # Normalize type names for comparison
+            if source_type != dest_type and not _types_compatible(source_type, dest_type):
+                changed[name] = f"{dest_type} → {source_type}"
+    
+    return {
+        "added": added,
+        "removed": removed,
+        "changed": changed
+    }
+
+
+def _types_compatible(type1: str, type2: str) -> bool:
+    """Check if two types are compatible (e.g., varchar and text)."""
+    # Normalize common type aliases
+    type_groups = [
+        {"integer", "int", "bigint", "int64", "number"},
+        {"varchar", "text", "string", "character varying"},
+        {"float", "double", "numeric", "decimal", "float64"},
+        {"boolean", "bool"},
+        {"timestamp", "datetime", "timestamptz"},
+        {"date"},
+    ]
+    
+    type1 = type1.lower()
+    type2 = type2.lower()
+    
+    for group in type_groups:
+        if type1 in group and type2 in group:
+            return True
+    
+    return type1 == type2
