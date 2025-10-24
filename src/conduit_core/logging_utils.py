@@ -142,7 +142,7 @@ class ConduitLogger:
 
 
         if dry_run:
-            status_icon = "🔍"
+            status_icon = "[>]"
             status_style = "bold yellow"
             text.append(f"{status_icon} [DRY RUN] DONE ", style=status_style)
         else:
@@ -180,7 +180,7 @@ class ConduitLogger:
 def print_header():
     """Printer Conduit Core header."""
     console.print()
-    console.print("🚀 [bold cyan]Conduit Core[/bold cyan]", justify="left")
+    console.print("[bold cyan]Conduit Core[/bold cyan]", justify="left")
     console.print("   Data ingestion pipeline starting...", style="dim")
     console.print()
 

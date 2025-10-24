@@ -297,10 +297,10 @@ def run_preflight(config_path: str = "ingest.yml", resource_name: Optional[str] 
     try:
         config = load_config(config_path)
     except Exception as e:
-        console.print(f"[red]✗[/red] Failed to load config: {e}")
+        console.print(f"[red]FAIL[/red] Failed to load config: {e}")
         return False
     
-    console.print("\n🔍 Running preflight checks...\n")
+    console.print("\nRunning preflight checks...\n")
     
     results = preflight_check(config, resource_name=resource_name, verbose=verbose)
     
@@ -312,9 +312,9 @@ def run_preflight(config_path: str = "ingest.yml", resource_name: Optional[str] 
     
     for check in results["checks"]:
         status_symbol = {
-            "pass": "[green]✓[/green]",
-            "warn": "[yellow]⚠[/yellow]",
-            "fail": "[red]✗[/red]"
+            "pass": "[green]PASS[/green]",
+            "warn": "[yellow]WARN[/yellow]",
+            "fail": "[red]FAIL[/red]"
         }.get(check["status"], "?")
         
         table.add_row(
@@ -327,21 +327,21 @@ def run_preflight(config_path: str = "ingest.yml", resource_name: Optional[str] 
     
     # Display warnings and errors
     if results["warnings"]:
-        console.print(f"\n[yellow]⚠ Warnings: {len(results['warnings'])}[/yellow]")
+        console.print(f"\n[yellow]Warnings: {len(results['warnings'])}[/yellow]")
         for warning in results["warnings"]:
             console.print(f"  • {warning}")
     
     if results["errors"]:
-        console.print(f"\n[red]✗ Errors: {len(results['errors'])}[/red]")
+        console.print(f"\n[red]Errors: {len(results['errors'])}[/red]")
         for error in results["errors"]:
             console.print(f"  • {error}")
     
-    console.print(f"\n⏱ Preflight completed in {results['duration_s']:.2f}s")
+    console.print(f"\nPreflight completed in {results['duration_s']:.2f}s")
     
     if results["passed"]:
-        console.print("\n[green]✓ All checks passed - safe to run[/green]\n")
+        console.print("\n[green]All checks passed - safe to run[/green]\n")
     else:
-        console.print("\n[red]✗ Preflight failed - fix errors before running[/red]\n")
+        console.print("\n[red]Preflight failed - fix errors before running[/red]\n")
     
     return results["passed"]
 
@@ -365,7 +365,7 @@ def run_resource(
         if not preflight_results["passed"]:
             from rich.console import Console
             console = Console()
-            console.print(f"\n[red]✗ Preflight failed for resource '{resource_name}'[/red]")
+            console.print(f"\n[red]Preflight failed for resource '{resource_name}'[/red]")
             for error in preflight_results["errors"]:
                 console.print(f"  • {error}")
             raise ValueError(f"Preflight checks failed. Use --skip-preflight to bypass.")

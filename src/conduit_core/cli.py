@@ -45,17 +45,17 @@ def run(
 ):
 
     """Execute a data pipeline resource."""
-    console.print("\n[bold cyan]🚀 Conduit Run[/bold cyan]\n")
+    console.print("\n[bold cyan]Conduit Run[/bold cyan]\n")
 
     try:
         config = load_config(config_file)
     except Exception as e:
-        console.print(f"[red]✗ Failed to load config: {e}[/red]")
+        console.print(f"[red][X] Failed to load config: {e}[/red]")
         raise typer.Exit(code=1)
 
     resources = [r for r in config.resources if not resource_name or r.name == resource_name]
     if not resources:
-        console.print(f"[red]✗ No matching resources found for '{resource_name}'[/red]")
+        console.print(f"[red][X] No matching resources found for '{resource_name}'[/red]")
         raise typer.Exit(code=1)
 
     for r in resources:
@@ -63,7 +63,7 @@ def run(
         try:
             run_resource(r, config, dry_run=dry_run, skip_preflight=skip_preflight)
         except Exception as e:
-            console.print(f"[red]✗ Resource '{r.name}' failed: {e}[/red]")
+            console.print(f"[red][X] Resource '{r.name}' failed: {e}[/red]")
             raise typer.Exit(code=1)
 
     console.print(Panel("[green bold][OK] Pipeline completed successfully[/green bold]", border_style="green"))
@@ -85,7 +85,7 @@ def preflight(
     except typer.Exit:
         raise  # Re-raise typer.Exit without catching it
     except Exception as e:
-        console.print(f"[red]✗ Preflight failed: {e}[/red]")
+        console.print(f"[red][X] Preflight failed: {e}[/red]")
         raise typer.Exit(code=1)
     
     # Exit with appropriate code
@@ -169,7 +169,7 @@ def manifest(
         console.print(f"[yellow][WARN] Manifest file not found: {manifest_path}[/yellow]")
         raise typer.Exit(code=0)
     except Exception as e:
-        console.print(f"[red]✗ Error reading manifest: {e}[/red]")
+        console.print(f"[red][X] Error reading manifest: {e}[/red]")
         raise typer.Exit(code=0)
 
 # ======================================================================================
