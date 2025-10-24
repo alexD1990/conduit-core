@@ -78,7 +78,7 @@ def test_engine_handles_partial_failures(tmp_path, test_setup):
 
     try:
         # Run should NOT raise an exception
-        run_resource(config.resources[0], config, batch_size=10) # Process all 3 records
+        run_resource(config.resources[0], config, batch_size=10, skip_preflight=True) # Process all 3 records
 
         # Assert directly against the saved error log file
         error_dir = tmp_path / "errors"
@@ -124,7 +124,7 @@ def test_no_error_log_when_all_succeed(tmp_path, test_setup):
     original_cwd = os.getcwd()
     os.chdir(tmp_path)
     try:
-        run_resource(config.resources[0], config)
+        run_resource(config.resources[0], config, skip_preflight=True)
         error_dir = tmp_path / "errors"
         assert not error_dir.exists(), "Error directory should not be created on a successful run."
     finally:

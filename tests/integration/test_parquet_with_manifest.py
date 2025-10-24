@@ -74,6 +74,7 @@ def test_manifest_cli_output(tmp_path, capsys):
     from conduit_core.manifest import ManifestEntry
     
     entry = ManifestEntry(
+        run_id="test_run_id",
         pipeline_name="test_pipeline",
         source_type="parquet",
         destination_type="postgresql",
