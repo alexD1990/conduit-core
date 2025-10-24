@@ -252,3 +252,57 @@ class PostgresDestination(BaseDestination):
                 cursor.close()
             if conn:
                 conn.close()
+
+    def table_exists(self) -> bool:
+        """Check if the destination table exists."""
+        try:
+            # Use existing connection if available
+            if hasattr(self, 'conn') and self.conn:
+                conn = self.conn
+                cursor = conn.cursor()
+                should_close = False
+            else:
+                conn = psycopg2.connect(self.connection_string)
+                cursor = conn.cursor()
+                should_close = True
+
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = %s 
+                    AND table_name = %s
+                )
+            """, (self.db_schema, self.table))
+            exists = cursor.fetchone()[0]
+            cursor.close()
+            if should_close:
+                conn.close()
+            return exists
+        except Exception as e:
+            raise ValueError(f"Failed to check table existence: {e}")
+
+    def get_table_schema(self) -> dict:
+        """Get schema of existing table."""
+        try:
+            conn = psycopg2.connect(self.connection_string)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT column_name, data_type, is_nullable
+                FROM information_schema.columns
+                WHERE table_schema = %s AND table_name = %s
+                ORDER BY ordinal_position
+            """, (self.db_schema, self.table))
+            
+            columns = []
+            for row in cursor.fetchall():
+                columns.append({
+                    "name": row[0],
+                    "type": row[1],
+                    "nullable": row[2] == 'YES'
+                })
+            cursor.close()
+            conn.close()
+            
+            return {"columns": columns}
+        except Exception as e:
+            raise ValueError(f"Failed to get table schema: {e}")

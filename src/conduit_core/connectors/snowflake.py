@@ -237,6 +237,36 @@ class SnowflakeDestination(BaseDestination):
             if temp_csv_path and os.path.exists(temp_csv_path):
                 os.unlink(temp_csv_path)
     
+    def table_exists(self) -> bool:
+        """Check if the destination table exists."""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(f"SHOW TABLES LIKE '{self.table}' IN SCHEMA {self.database}.{self.schema}")
+            exists = len(cursor.fetchall()) > 0
+            cursor.close()
+            return exists
+        except Exception as e:
+            raise ValueError(f"Failed to check table existence: {e}")
+
+    def get_table_schema(self) -> dict:
+        """Get schema of existing table."""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(f"DESCRIBE TABLE {self.database}.{self.schema}.{self.table}")
+            
+            columns = []
+            for row in cursor.fetchall():
+                columns.append({
+                    "name": row[0],  # column name
+                    "type": row[1],  # data type
+                    "nullable": row[3] == 'Y'  # nullable
+                })
+            cursor.close()
+            
+            return {"columns": columns}
+        except Exception as e:
+            raise ValueError(f"Failed to get table schema: {e}")
+
     def _create_table_if_not_exists(self, cursor, columns):
         """Create table if it doesn't exist."""
         column_defs = ", ".join([f'"{col.upper()}" VARCHAR' for col in columns])
