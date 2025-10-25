@@ -50,6 +50,8 @@ tests/test_error_handling.py
 tests/test_manifest.py
 tests/test_observability.py
 tests/test_postgresql_connector.py
+tests/test_preflight.py
+tests/test_preflight_enhancements.py
 tests/test_progress_bars.py
 tests/test_quality_checks.py
 tests/test_retry.py

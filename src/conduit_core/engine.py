@@ -33,6 +33,45 @@ from .connectors.registry import get_source_connector_map, get_destination_conne
 from .manifest import PipelineManifest, ManifestTracker
 from .checkpoint import CheckpointManager
 
+
+def _get_sql_type_for_column(col_type: str, dialect: str) -> str:
+    """Map conduit column type to SQL type for given dialect."""
+    type_maps = {
+        'postgresql': {
+            'integer': 'INTEGER',
+            'float': 'DOUBLE PRECISION',
+            'decimal': 'NUMERIC',
+            'boolean': 'BOOLEAN',
+            'date': 'DATE',
+            'datetime': 'TIMESTAMP',
+            'string': 'TEXT',
+            'json': 'JSONB'
+        },
+        'snowflake': {
+            'integer': 'NUMBER(38,0)',
+            'float': 'FLOAT',
+            'decimal': 'NUMBER(38,9)',
+            'boolean': 'BOOLEAN',
+            'date': 'DATE',
+            'datetime': 'TIMESTAMP_NTZ',
+            'string': 'VARCHAR',
+            'json': 'VARIANT'
+        },
+        'bigquery': {
+            'integer': 'INT64',
+            'float': 'FLOAT64',
+            'decimal': 'NUMERIC',
+            'boolean': 'BOOL',
+            'date': 'DATE',
+            'datetime': 'DATETIME',
+            'string': 'STRING',
+            'json': 'JSON'
+        }
+    }
+    
+    mapping = type_maps.get(dialect, {})
+    return mapping.get(col_type, 'VARCHAR(255)')
+
 #------------------------------------------------------------------------------------------------
 # Preflight mode
 #------------------------------------------------------------------------------------------------
@@ -113,7 +152,7 @@ def preflight_check(
             source = SourceClass(source_config)
 
             # Test connection by attempting read with limit 0
-            test_iter = source.read()
+            test_iter = source.read(query=resource.query if hasattr(resource, 'query') else None)
             next(test_iter, None)  # Try to fetch first batch
             results["checks"].append({
                 "name": f"{resource_prefix} Source Connection",
@@ -365,7 +404,7 @@ def run_resource(
         if not preflight_results["passed"]:
             from rich.console import Console
             console = Console()
-            console.print(f"\n[red]Preflight failed for resource '{resource_name}'[/red]")
+            console.print(f"\n[red]Preflight failed for resource '{resource.name}'[/red]")
             for error in preflight_results["errors"]:
                 console.print(f"  • {error}")
             raise ValueError(f"Preflight checks failed. Use --skip-preflight to bypass.")
@@ -412,17 +451,29 @@ def run_resource(
             if resource.incremental_column and incremental_start_value is not None:
                 wrapped_value = f"'{incremental_start_value}'" if isinstance(incremental_start_value, (str, datetime, date)) else incremental_start_value
                 filter_condition = f"{resource.incremental_column} > {wrapped_value}"
-                if "WHERE" in final_query.upper():
-                    final_query += f" AND {filter_condition}"
+                
+                # Check if ORDER BY exists and insert WHERE before it
+                if "ORDER BY" in final_query.upper():
+                    order_by_pos = final_query.upper().find("ORDER BY")
+                    base_query = final_query[:order_by_pos].strip()
+                    order_clause = final_query[order_by_pos:]
+                    
+                    if "WHERE" in base_query.upper():
+                        final_query = f"{base_query} AND {filter_condition} {order_clause}"
+                    else:
+                        final_query = f"{base_query} WHERE {filter_condition} {order_clause}"
                 else:
-                    final_query += f" WHERE {filter_condition}"
-                if "ORDER BY" not in final_query.upper():
+                    if "WHERE" in final_query.upper():
+                        final_query += f" AND {filter_condition}"
+                    else:
+                        final_query += f" WHERE {filter_condition}"
                     final_query += f" ORDER BY {resource.incremental_column}"
             elif resource.incremental_column:
                 logger.info(f"Incremental column '{resource.incremental_column}' defined, but no previous state found. Performing full load.")
                 if "ORDER BY" not in final_query.upper():
                     final_query += f" ORDER BY {resource.incremental_column}"
-
+            
+            # Initialize connectors
             source_class = get_source_connector_map().get(source_config.type)
             source = source_class(source_config)
             destination_class = get_destination_connector_map().get(destination_config.type)
@@ -494,6 +545,87 @@ def run_resource(
                     except Exception as e:
                         logger.warning(f"Could not validate schema: {e}")
                         # Don't fail the pipeline if schema retrieval fails
+
+                    # --- Schema Drift Detection & Auto-Evolution ---
+                    # Compare source schema with current destination schema
+                    try:
+                        dest_schema_dict = destination.get_table_schema()
+                        if dest_schema_dict:
+                            from .schema import compare_schemas
+                            
+                            # Convert to comparable format
+                            source_schema_for_compare = {"columns": inferred_schema.get("columns", [])}
+                            # dest_schema_dict is {col_name: {type: ..., nullable: ...}}
+                            dest_schema_for_compare = {"columns": [{"name": k.lower(), "type": v.get("type"), "nullable": v.get("nullable")} for k, v in dest_schema_dict.items()]}
+
+                            drift = compare_schemas(source_schema_for_compare, dest_schema_for_compare)
+
+                            if drift.get('added') or drift.get('removed') or drift.get('changed'):
+                                # Log clean summary ONCE
+                                logger.info("=" * 60)
+                                logger.info("Schema Drift Detected")
+                                logger.info("=" * 60)
+                                
+                                if drift.get('added'):
+                                    logger.info(f"New columns in source: {', '.join(drift['added'])}")
+                                if drift.get('removed'):
+                                    logger.info(f"Columns removed from source: {', '.join(drift['removed'])}")
+                                if drift.get('changed'):
+                                    for col, change in drift['changed'].items():
+                                        logger.info(f"Type changed: {col} ({change})")
+                                
+                                logger.info("=" * 60)
+                                
+                                # Auto-evolve if configured
+                                schema_evo_config = destination_config.schema_evolution
+                                if schema_evo_config and schema_evo_config.enabled:
+                                    if schema_evo_config.on_new_column == 'add_nullable' and drift.get('added'):
+                                        logger.info("Auto-evolving schema: Adding new columns...")
+                                        
+                                        for col_name in drift['added']:
+                                            # Find column info from inferred schema
+                                            col_info = next((c for c in inferred_schema.get('columns', []) if c.get('name') == col_name), None)
+                                            if col_info:
+                                                col_type = col_info.get('type', 'string')
+                                                
+                                                # Generate dialect-specific ALTER TABLE
+                                                if destination_config.type == 'postgres':
+                                                    sql_type = _get_sql_type_for_column(col_type, 'postgresql')
+                                                    sql = f'ALTER TABLE "{destination_config.table}" ADD COLUMN "{col_name}" {sql_type}'
+                                                elif destination_config.type == 'snowflake':
+                                                    sql_type = _get_sql_type_for_column(col_type, 'snowflake')
+                                                    full_table = f'"{destination.database}"."{destination.db_schema}"."{destination_config.table}"'
+                                                    sql = f'ALTER TABLE {full_table} ADD COLUMN "{col_name.upper()}" {sql_type}'
+                                                elif destination_config.type == 'bigquery':
+                                                    sql_type = _get_sql_type_for_column(col_type, 'bigquery')
+                                                    full_table = f'`{destination_config.project}.{destination_config.dataset}.{destination_config.table}`'
+                                                    sql = f'ALTER TABLE {full_table} ADD COLUMN {col_name} {sql_type}'
+                                                else:
+                                                    continue
+                                                
+                                                logger.info(f"Executing: {sql}")
+                                                if not dry_run and hasattr(destination, 'execute_ddl'):
+                                                    try:
+                                                        result = destination.execute_ddl(sql)
+                                                        logger.info(f"✓ Column '{col_name}' added successfully")
+                                                    except Exception as e:
+                                                        logger.error(f"FAILED to add column '{col_name}': {e}")
+                                                        logger.exception("Full traceback:")
+                                                        if destination_config.strict_validation:
+                                                            raise
+                                                        else:
+                                                            logger.warning("Continuing despite ALTER TABLE failure...")
+                                                else:
+                                                    logger.info("[DRY RUN] Would execute ALTER TABLE")
+                                    else:
+                                        logger.warning("Schema drift detected but auto-evolution not configured.")
+                                        logger.warning("Data for new columns will be silently dropped.")
+                                else:
+                                    if drift.get('added'):
+                                        logger.warning("Schema drift detected but auto-evolution not enabled.")
+                                        logger.warning("Data for new columns will be silently dropped.")
+                    except Exception as e:
+                        logger.debug(f"Could not check schema drift: {e}")
 
                 # Required columns check
                 if destination_config.required_columns:
@@ -705,7 +837,7 @@ def run_resource(
                                         if current_batch_max is None or current_val > current_batch_max:
                                             current_batch_max = current_val
                                 except TypeError:
-                                    logger.warning(f"Could not compare incremental value '{current_val}' with max '{current_batch_max}'.")
+                                    logger.debug(f"Could not compare incremental value '{current_val}' with max '{current_batch_max}'.")
                         max_value_seen = current_batch_max
 
                     batch_duration = time.time() - batch_start_time
@@ -759,7 +891,8 @@ def run_resource(
                 if resource.incremental_column:
                     if max_value_seen is not None and (incremental_start_value is None or max_value_seen > incremental_start_value):
                         logger.info(f"Saving new incremental state: {resource.incremental_column} = {max_value_seen}")
-                        save_state({**current_state, resource.name: max_value_seen})
+                        max_value_str = max_value_seen.isoformat() if isinstance(max_value_seen, (datetime, date)) else max_value_seen
+                        save_state({**current_state, resource.name: max_value_str})
                     else:
                         logger.info(f"No new records found. State remains at {incremental_start_value}.")
 
