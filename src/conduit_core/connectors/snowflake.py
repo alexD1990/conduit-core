@@ -81,6 +81,7 @@ class SnowflakeDestination(BaseDestination):
             conn = self._get_connection()
             cursor = conn.cursor()
             cursor.execute(sql)
+            conn.commit() 
             logger.info("DDL executed successfully")
         except Exception as e:
             logger.error(f"Snowflake DDL execution failed: {e}")
@@ -247,25 +248,6 @@ class SnowflakeDestination(BaseDestination):
             return exists
         except Exception as e:
             raise ValueError(f"Failed to check table existence: {e}")
-
-    def get_table_schema(self) -> dict:
-        """Get schema of existing table."""
-        try:
-            cursor = self.conn.cursor()
-            cursor.execute(f"DESCRIBE TABLE {self.database}.{self.schema}.{self.table}")
-            
-            columns = []
-            for row in cursor.fetchall():
-                columns.append({
-                    "name": row[0],  # column name
-                    "type": row[1],  # data type
-                    "nullable": row[3] == 'Y'  # nullable
-                })
-            cursor.close()
-            
-            return {"columns": columns}
-        except Exception as e:
-            raise ValueError(f"Failed to get table schema: {e}")
 
     def _create_table_if_not_exists(self, cursor, columns):
         """Create table if it doesn't exist."""

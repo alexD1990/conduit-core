@@ -259,15 +259,21 @@ See docs/data-quality.md
  for configuration details.
 
 ## CLI Commands Overview
-| Command                  | Description                                |
-| ------------------------ | ------------------------------------------ |
-| `conduit run`            | Execute pipeline                           |
-| `conduit validate`       | Validate config, schema, and quality rules |
-| `conduit schema`         | Infer and export source schema             |
-| `conduit schema-compare` | Compare current schema vs baseline         |
-| `conduit manifest`       | View run history and performance metrics   |
 
-Full CLI reference: docs/cli-reference.md
+| Command            | Description                                      |
+|--------------------|--------------------------------------------------|
+| `conduit run`      | Execute pipeline (with automatic preflight)      |
+| `conduit preflight`| Health checks without execution                  |
+| `conduit schema`   | Infer and export source schema                   |
+| `conduit manifest` | View run history with unique run IDs             |
+
+**Key Features:**
+- ✅ Auto-preflight validation before every run
+- ✅ Unique run IDs for tracking and debugging
+- ✅ Comprehensive health checks (connections, schema, compatibility)
+- ✅ Enhanced manifest logging with preflight metadata
+
+Full CLI reference: [docs/cli-reference.md](docs/cli-reference.md)
 
 ## Supported Connectors 
 
