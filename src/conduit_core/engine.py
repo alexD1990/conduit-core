@@ -113,7 +113,7 @@ def preflight_check(
             source = SourceClass(source_config)
 
             # Test connection by attempting read with limit 0
-            test_iter = source.read()
+            test_iter = source.read(query=resource.query if hasattr(resource, 'query') else None)
             next(test_iter, None)  # Try to fetch first batch
             results["checks"].append({
                 "name": f"{resource_prefix} Source Connection",
@@ -365,7 +365,7 @@ def run_resource(
         if not preflight_results["passed"]:
             from rich.console import Console
             console = Console()
-            console.print(f"\n[red]Preflight failed for resource '{resource_name}'[/red]")
+            console.print(f"\n[red]Preflight failed for resource '{resource.name}'[/red]")
             for error in preflight_results["errors"]:
                 console.print(f"  • {error}")
             raise ValueError(f"Preflight checks failed. Use --skip-preflight to bypass.")
@@ -408,21 +408,34 @@ def run_resource(
             incremental_start_value = last_checkpoint_value if last_checkpoint_value is not None else current_state.get(resource.name)
             max_value_seen = incremental_start_value
 
+            # Lines 411-424, replace with:
             final_query = resource.query
             if resource.incremental_column and incremental_start_value is not None:
                 wrapped_value = f"'{incremental_start_value}'" if isinstance(incremental_start_value, (str, datetime, date)) else incremental_start_value
                 filter_condition = f"{resource.incremental_column} > {wrapped_value}"
-                if "WHERE" in final_query.upper():
-                    final_query += f" AND {filter_condition}"
+                
+                # Check if ORDER BY exists and insert WHERE before it
+                if "ORDER BY" in final_query.upper():
+                    order_by_pos = final_query.upper().find("ORDER BY")
+                    base_query = final_query[:order_by_pos].strip()
+                    order_clause = final_query[order_by_pos:]
+                    
+                    if "WHERE" in base_query.upper():
+                        final_query = f"{base_query} AND {filter_condition} {order_clause}"
+                    else:
+                        final_query = f"{base_query} WHERE {filter_condition} {order_clause}"
                 else:
-                    final_query += f" WHERE {filter_condition}"
-                if "ORDER BY" not in final_query.upper():
+                    if "WHERE" in final_query.upper():
+                        final_query += f" AND {filter_condition}"
+                    else:
+                        final_query += f" WHERE {filter_condition}"
                     final_query += f" ORDER BY {resource.incremental_column}"
             elif resource.incremental_column:
                 logger.info(f"Incremental column '{resource.incremental_column}' defined, but no previous state found. Performing full load.")
                 if "ORDER BY" not in final_query.upper():
                     final_query += f" ORDER BY {resource.incremental_column}"
-
+           
+            # Initialize connectors
             source_class = get_source_connector_map().get(source_config.type)
             source = source_class(source_config)
             destination_class = get_destination_connector_map().get(destination_config.type)
@@ -759,7 +772,8 @@ def run_resource(
                 if resource.incremental_column:
                     if max_value_seen is not None and (incremental_start_value is None or max_value_seen > incremental_start_value):
                         logger.info(f"Saving new incremental state: {resource.incremental_column} = {max_value_seen}")
-                        save_state({**current_state, resource.name: max_value_seen})
+                        max_value_str = max_value_seen.isoformat() if isinstance(max_value_seen, (datetime, date)) else max_value_seen
+                        save_state({**current_state, resource.name: max_value_str})
                     else:
                         logger.info(f"No new records found. State remains at {incremental_start_value}.")
 
