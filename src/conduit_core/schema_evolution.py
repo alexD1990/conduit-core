@@ -129,46 +129,86 @@ class SchemaEvolutionManager:
 
     def apply_evolution(
         self,
-        destination: BaseDestination, 
+        destination: BaseDestination,
         table_name: str,
-        changes: SchemaChanges, 
-        config: SchemaEvolutionConfig
-    ) -> None:
-        """
-        Applies schema evolution to the destination based on the mode.
-        """
+        changes: SchemaChanges,
+        config: SchemaEvolutionConfig,
+        resource_name: str
+    ) -> List[str]:
+        """Apply evolution based on config policy. Returns list of executed DDL."""
+
         if not changes.has_changes():
             logger.info("No schema changes detected.")
-            return
+            return []
 
+        logger.info(f"[DEBUG] Config mode: {config.mode}, auto_add: {config.auto_add_columns}")
+        logger.info(f"[DEBUG] Added columns: {len(changes.added_columns)}")
+
+        executed_ddl = []
         dialect = destination.config.type
-        
-        if config.mode == "strict":
-            logger.error(f"Schema changes detected in 'strict' mode. Halting pipeline. Changes: {changes.summary()}")
-            raise SchemaEvolutionError(f"Schema changes detected in 'strict' mode: {changes.summary()}")
-        
-        elif config.mode == "auto":
-            sql_commands = self.generate_alter_table_sql(table_name, changes, config, dialect)
-            if sql_commands:
-                logger.info(f"Applying schema evolution in 'auto' mode. Executing {len(sql_commands)} DDL statement(s).")
-                for sql in sql_commands:
-                    try:
-                        logger.info(f"Executing: {sql}")
-                        destination.alter_table(sql)
-                    except Exception as e:
-                        logger.error(f"Failed to execute ALTER TABLE statement: {e}")
-                        raise SchemaEvolutionError(f"Failed to apply auto schema evolution: {e}")
+
+        if changes.added_columns:
+            logger.info(f"[DEBUG] Checking: mode={config.mode}, auto_add={config.auto_add_columns}")
+            if config.mode == "auto" and config.auto_add_columns:
+                print(f"[Schema Evolution] {resource_name}")
+                for col in changes.added_columns:
+
+                    from .schema import TableAutoCreator
+                    ddl = TableAutoCreator.generate_add_column_sql(table_name, col, dialect)
+                    destination.alter_table(ddl)
+                    executed_ddl.append(ddl)
+                    print(f"  [+] Added: {col.name} {col.type}")
+                    logger.info(f"  [+] Added: {col.name} {col.type}")
+            elif config.mode == "strict":
+                raise SchemaEvolutionError(
+                    f"Schema changes detected in 'strict' mode. Halting pipeline.\n"
+                    f"Added columns: {[c.name for c in changes.added_columns]}"
+                )
             else:
-                logger.info("Schema changes detected, but no 'auto' actions triggered.")
-        
-        elif config.mode == "manual":
-            logger.warning(f"Schema changes detected in 'manual' mode. No changes will be applied. Summary: {changes.summary()}")
-            # We still run generate_alter_table_sql to trigger 'fail' or 'warn' actions
-            try:
-                self.generate_alter_table_sql(table_name, changes, config, dialect)
-            except SchemaEvolutionError as e:
-                logger.error(f"'manual' mode failed due to strict 'on_..._column' setting: {e}")
-                raise e
+                logger.warning(f"New columns detected but auto-evolution disabled: {[c.name for c in changes.added_columns]}")
+
+        if changes.removed_columns:
+            if config.on_column_removed == "fail":
+                raise SchemaEvolutionError(
+                    f"Column(s) removed from source: {[c.name for c in changes.removed_columns]}. "
+                    f"Policy: fail. Pipeline halted."
+                )
+            elif config.on_column_removed == "warn":
+                logger.warning(f"  [!] Removed: {[c.name for c in changes.removed_columns]} (destination data preserved)")
+
+        if changes.type_changes:
+            if config.on_type_change == "fail":
+                raise SchemaEvolutionError(
+                    f"Column type changed: {[(t.column, t.old_type, t.new_type) for t in changes.type_changes]}. "
+                    f"Policy: fail. Pipeline halted."
+                )
+            elif config.on_type_change == "warn":
+                for tc in changes.type_changes:
+                    logger.warning(f"  [~] Type changed: {tc.column} {tc.old_type} → {tc.new_type}")
+
+        if executed_ddl and config.track_history:
+            from .schema_store import SchemaStore
+            schema_store = SchemaStore()
+            old_schema = schema_store.load_last_schema(resource_name)
+            old_version = old_schema.get('version', 0) if old_schema else 0
+            new_version = old_version + 1
+            
+            audit_file = schema_store.log_evolution_event(
+                resource_name=resource_name,
+                changes={
+                    'added': [{'name': c.name, 'type': c.type, 'nullable': c.nullable} for c in changes.added_columns],
+                    'removed': [{'name': c.name, 'type': c.type, 'nullable': c.nullable} for c in changes.removed_columns],
+                    'type_changes': [{'column': t.column, 'old_type': t.old_type, 'new_type': t.new_type} for t in changes.type_changes]
+                },
+                ddl_applied=executed_ddl,
+                old_version=old_version,
+                new_version=new_version
+            )
+            
+            print(f"  Version: {old_version} → {new_version}")
+            print(f"  Audit: {audit_file}")
+
+        return executed_ddl
 
 
 class SchemaEvolutionError(Exception):

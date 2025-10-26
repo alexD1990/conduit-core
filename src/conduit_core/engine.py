@@ -651,19 +651,43 @@ def run_resource(
                 destination_config.schema_evolution and
                 destination_config.schema_evolution.enabled and
                 inferred_schema and inferred_schema.get("columns") and
-                destination_config.type in ['postgresql', 'snowflake', 'bigquery']
+                destination_config.type in ['postgres', 'snowflake', 'bigquery']
             ):
                 schema_store = SchemaStore()
-                last_schema = schema_store.load_last_schema(resource.name)
-                if last_schema:
+                last_schema_data = schema_store.load_last_schema(resource.name)
+                
+                if last_schema_data:
+                    last_schema = last_schema_data.get('schema') if isinstance(last_schema_data, dict) and 'schema' in last_schema_data else last_schema_data
+                    
                     logger.info("Comparing inferred schema with last known schema...")
                     evolution_mgr = SchemaEvolutionManager()
                     changes = evolution_mgr.compare_schemas(last_schema, inferred_schema)
+                    
+                    logger.info("Comparing inferred schema with last known schema...")
+                    evolution_mgr = SchemaEvolutionManager()
+                    changes = evolution_mgr.compare_schemas(last_schema, inferred_schema)
+
+                    
                     if changes.has_changes():
-                        logger.warning(f"Schema changes detected: {changes.summary()}")
                         if not dry_run:
                             try:
-                                evolution_mgr.apply_evolution(destination, destination_config.table, changes, destination_config.schema_evolution)
+                                executed_ddl = evolution_mgr.apply_evolution(
+                                    destination, 
+                                    destination_config.table, 
+                                    changes, 
+                                    destination_config.schema_evolution,
+                                    resource.name
+                                )
+                                
+                                if executed_ddl:
+                                    new_version = schema_store.save_schema(resource.name, inferred_schema)
+                                    
+                                    tracker.metadata['schema_evolution'] = {
+                                        'version': new_version,
+                                        'changes_summary': changes.summary(),
+                                        'ddl_executed': executed_ddl
+                                    }
+                                    
                             except SchemaEvolutionError as e:
                                 logger.error(f"Schema evolution failed: {e}. Halting pipeline.")
                                 raise
@@ -672,13 +696,8 @@ def run_resource(
                     else:
                         logger.info("No schema changes detected.")
                 else:
-                    logger.info("No previous schema found, skipping comparison.")
-                if not dry_run and inferred_schema.get("columns"):
+                    logger.info("No previous schema found. Saving current schema as baseline.")
                     schema_store.save_schema(resource.name, inferred_schema)
-                elif dry_run:
-                    logger.debug("DRY RUN: Skipping schema save.")
-                elif not inferred_schema.get("columns"):
-                    logger.warning("Skipping schema save as inferred schema is empty.")
 
             # Auto-create table
             if destination_config.auto_create_table and inferred_schema:
