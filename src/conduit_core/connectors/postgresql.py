@@ -1,7 +1,7 @@
 # src/conduit_core/connectors/postgresql.py
 import logging
 import os
-from typing import Iterable, Dict, Any, Optional
+from typing import Iterable, Dict, Any, Optional, List
 import psycopg2
 from psycopg2.extras import RealDictCursor, execute_batch
 from dotenv import load_dotenv
@@ -214,6 +214,43 @@ class PostgresDestination(BaseDestination):
         return type_mapping.get(pg_type.lower(), 'string')
     # --- End Phase 3 additions ---
 
+    def _generate_merge_sql(self, table_name: str, columns: List[str], primary_keys: List[str]) -> str:
+        """
+        Generate PostgreSQL MERGE (INSERT ... ON CONFLICT) statement.
+        
+        Args:
+            table_name: Target table name
+            columns: List of all column names
+            primary_keys: List of primary key column names
+        
+        Returns:
+            SQL MERGE statement
+        """
+        if not primary_keys:
+            raise ValueError("primary_keys required for MERGE operation")
+        
+        # Build column lists
+        all_cols = ', '.join([f'"{col}"' for col in columns])
+        placeholders = ', '.join(['%s'] * len(columns))
+        
+        # Build UPDATE SET clause (exclude primary keys)
+        update_cols = [col for col in columns if col not in primary_keys]
+        update_set = ', '.join([f'"{col}" = EXCLUDED."{col}"' for col in update_cols])
+        
+        # Build conflict target (primary keys)
+        conflict_target = ', '.join([f'"{pk}"' for pk in primary_keys])
+        
+        sql = f"""
+            INSERT INTO {self.db_schema}.{table_name} ({all_cols})
+            VALUES ({placeholders})
+            ON CONFLICT ({conflict_target})
+            DO UPDATE SET {update_set}
+        """
+        
+        return sql.strip()
+
+
+
     def write(self, records: Iterable[Dict[str, Any]]):
         self.accumulated_records.extend(list(records))
 
@@ -230,18 +267,34 @@ class PostgresDestination(BaseDestination):
             conn = psycopg2.connect(self.connection_string)
             cursor = conn.cursor()
             
+            # Handle full_refresh mode (legacy)
             if self.mode == 'full_refresh':
                 cursor.execute(f"TRUNCATE TABLE {self.db_schema}.{self.table}")
             
+            # Handle write_mode
+            if self.config.write_mode == 'truncate' or self.config.write_mode == 'replace':
+                cursor.execute(f"TRUNCATE TABLE {self.db_schema}.{self.table}")
+            
             columns = list(self.accumulated_records[0].keys())
-            columns_str = ", ".join(f'"{c}"' for c in columns)
-            placeholders = ", ".join(["%s"] * len(columns))
-            insert_query = f"INSERT INTO {self.db_schema}.{self.table} ({columns_str}) VALUES ({placeholders})"
             data = [tuple(record.get(col) for col in columns) for record in self.accumulated_records]
             
-            self._execute_batch_insert(cursor, insert_query, data)
+            # Choose INSERT or MERGE based on write_mode
+            if self.config.write_mode == 'merge':
+                if not self.config.primary_keys:
+                    raise ValueError("write_mode='merge' requires primary_keys configuration")
+                
+                merge_query = self._generate_merge_sql(self.table, columns, self.config.primary_keys)
+                self._execute_batch_insert(cursor, merge_query, data)
+                logger.info(f"[OK] Merged {len(data)} records into {self.db_schema}.{self.table}")
+            else:
+                # Default: append mode (INSERT)
+                columns_str = ", ".join(f'"{c}"' for c in columns)
+                placeholders = ", ".join(["%s"] * len(columns))
+                insert_query = f"INSERT INTO {self.db_schema}.{self.table} ({columns_str}) VALUES ({placeholders})"
+                self._execute_batch_insert(cursor, insert_query, data)
+                logger.info(f"[OK] Successfully wrote {len(data)} records to {self.db_schema}.{self.table}")
+            
             conn.commit()
-            logger.info(f"[OK] Successfully wrote {len(data)} records to {self.db_schema}.{self.table}")
         except psycopg2.Error as e:
             if conn:
                 conn.rollback()

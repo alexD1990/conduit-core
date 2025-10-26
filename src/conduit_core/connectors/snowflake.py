@@ -3,7 +3,7 @@ import logging
 import os
 import tempfile
 import csv
-from typing import Iterable, Dict, Any, Optional
+from typing import Iterable, Dict, Any, Optional, List
 from pathlib import Path
 import snowflake.connector
 from snowflake.connector.errors import DatabaseError, ProgrammingError
@@ -191,6 +191,57 @@ class SnowflakeDestination(BaseDestination):
         cursor.execute(copy_command)
         return cursor.fetchone()
 
+
+    def _generate_snowflake_merge_sql(self, table_name: str, columns: List[str], primary_keys: List[str], stage_name: str, csv_filename: str) -> str:
+        """
+        Generate Snowflake MERGE statement.
+        
+        Args:
+            table_name: Target table name
+            columns: List of all column names
+            primary_keys: List of primary key column names
+            stage_name: Staging area name
+            csv_filename: CSV file name in stage
+        
+        Returns:
+            SQL MERGE statement
+        """
+        if not primary_keys:
+            raise ValueError("primary_keys required for MERGE operation")
+        
+        # Build column mapping from CSV columns (using $1, $2, etc. for positional access)
+        column_positions = {col: idx + 1 for idx, col in enumerate(columns)}
+        select_cols = ', '.join([f'${column_positions[col]}::VARCHAR as "{col}"' for col in columns])
+        
+        # Build JOIN condition on primary keys
+        join_conditions = ' AND '.join([f'target."{pk}" = source."{pk}"' for pk in primary_keys])
+        
+        # Build UPDATE SET clause (exclude primary keys)
+        update_cols = [col for col in columns if col not in primary_keys]
+        update_set = ', '.join([f'target."{col}" = source."{col}"' for col in update_cols])
+        
+        # Build INSERT columns and values
+        insert_cols = ', '.join([f'"{col}"' for col in columns])
+        insert_vals = ', '.join([f'source."{col}"' for col in columns])
+        
+        merge_sql = f"""
+        MERGE INTO {self.database}.{self.db_schema}."{table_name}" AS target
+        USING (
+            SELECT {select_cols}
+            FROM @{stage_name}/{csv_filename}.gz
+            (FILE_FORMAT => (TYPE = CSV FIELD_OPTIONALLY_ENCLOSED_BY = '"' SKIP_HEADER = 1))
+        ) AS source
+        ON {join_conditions}
+        WHEN MATCHED THEN
+            UPDATE SET {update_set}
+        WHEN NOT MATCHED THEN
+            INSERT ({insert_cols})
+            VALUES ({insert_vals})
+        """
+        
+        return merge_sql.strip()
+    
+
     def finalize(self):
         """Writes accumulated records to Snowflake."""
         if not self.accumulated_records:
@@ -220,13 +271,51 @@ class SnowflakeDestination(BaseDestination):
             logger.info(f"Writing {len(self.accumulated_records)} records to Snowflake via staged file.")
             
             stage_name = f"conduit_stage_{self.table}"
-            result = self._execute_snowflake_commands(cursor, stage_name, temp_csv_path)
+            csv_filename = Path(temp_csv_path).name
             
-            if result and len(result) >= 4 and result[3] == 'LOADED':  # Status in column 4
-                logger.info(f"[OK] Successfully loaded rows into Snowflake")
+            # Upload to stage
+            cursor.execute(f"CREATE OR REPLACE TEMPORARY STAGE {stage_name}")
+            cursor.execute(f"PUT file://{temp_csv_path} @{stage_name} AUTO_COMPRESS=TRUE OVERWRITE=TRUE")
+            
+            # Handle write_mode
+            if self.config.write_mode == 'truncate' or self.config.write_mode == 'replace':
+                cursor.execute(f"TRUNCATE TABLE IF EXISTS {self.database}.{self.db_schema}.{self.table}")
+            
+            # Choose COPY or MERGE based on write_mode
+            if self.config.write_mode == 'merge':
+                if not self.config.primary_keys:
+                    raise ValueError("write_mode='merge' requires primary_keys configuration")
+                
+                # Create file format if not exists
+                cursor.execute("""
+                    CREATE OR REPLACE FILE FORMAT CSV_FORMAT
+                    TYPE = CSV
+                    FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+                    SKIP_HEADER = 1
+                """)
+                
+                merge_sql = self._generate_snowflake_merge_sql(
+                    self.table, columns, self.config.primary_keys, stage_name, csv_filename
+                )
+                cursor.execute(merge_sql)
+                result = cursor.fetchone()
+                logger.info(f"[OK] Merged records into Snowflake")
             else:
-                logger.warning(f"Snowflake COPY command did not return 'LOADED' status. Result: {result}")
-
+                # Default: COPY INTO (append mode)
+                copy_command = f"""
+                    COPY INTO {self.database}.{self.db_schema}."{self.table}"
+                    FROM @{stage_name}/{csv_filename}.gz
+                    FILE_FORMAT = (TYPE = CSV FIELD_OPTIONALLY_ENCLOSED_BY = '"' SKIP_HEADER = 1)
+                    ON_ERROR = ABORT_STATEMENT
+                """
+                cursor.execute(copy_command)
+                result = cursor.fetchone()
+                
+                if result and len(result) >= 4 and result[3] == 'LOADED':
+                    logger.info(f"[OK] Successfully loaded rows into Snowflake")
+                else:
+                    logger.warning(f"Snowflake COPY command did not return 'LOADED' status. Result: {result}")
+        
         except Exception as e:
             logger.error(f"Failed to write to Snowflake: {e}")
             raise ValueError(f"Snowflake write error: {e}") from e

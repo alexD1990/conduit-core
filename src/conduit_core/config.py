@@ -1,7 +1,7 @@
 # src/conduit_core/config.py
 
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # Import QualityCheck from the new quality module
 from .quality import QualityCheck
@@ -42,9 +42,21 @@ class SchemaEvolutionConfig(BaseModel):
 class Destination(BaseModel):
     name: str
     type: str
+    connection_string: Optional[str] = None
+    table: Optional[str] = None
+    write_mode: str = "append"
+    primary_keys: Optional[List[str]] = None
+    update_strategy: str = "update_all"
     path: Optional[str] = None
     bucket: Optional[str] = None
-    connection_string: Optional[str] = None
+
+    @model_validator(mode='after')
+    def validate_merge_requirements(self):
+        """Validate that merge mode has required config."""
+        if self.write_mode == "merge" and not self.primary_keys:
+            raise ValueError(f"write_mode='merge' requires primary_keys to be specified")
+        return self
+    
 
     # Database fields
     host: Optional[str] = None
@@ -53,7 +65,6 @@ class Destination(BaseModel):
     user: Optional[str] = None
     password: Optional[str] = None
     db_schema: Optional[str] = None
-    table: Optional[str] = None
 
     # Snowflake specific
     account: Optional[str] = None
