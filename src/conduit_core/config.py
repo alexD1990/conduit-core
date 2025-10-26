@@ -47,6 +47,8 @@ class Destination(BaseModel):
     write_mode: str = "append"
     primary_keys: Optional[List[str]] = None
     update_strategy: str = "update_all"
+    isolation_level: str = "READ COMMITTED"
+    checkpoint_interval: Optional[int] = None
     path: Optional[str] = None
     bucket: Optional[str] = None
 

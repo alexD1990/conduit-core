@@ -258,6 +258,36 @@ class PostgresDestination(BaseDestination):
     def _execute_batch_insert(self, cursor, insert_query, data):
         execute_batch(cursor, insert_query, data, page_size=1000)
 
+    def _write_with_checkpoints(self, conn, cursor, columns: List[str], data: List[tuple], insert_query: str):
+        """..."""
+        checkpoint_interval = self.config.checkpoint_interval or len(data)
+        total_written = 0
+        
+        # Start first transaction
+        isolation_level = getattr(self.config, 'isolation_level', 'READ COMMITTED')
+        cursor.execute(f"BEGIN ISOLATION LEVEL {isolation_level}")
+        
+        for i in range(0, len(data), checkpoint_interval):
+            batch = data[i:i + checkpoint_interval]
+            
+            try:
+                self._execute_batch_insert(cursor, insert_query, batch)
+                cursor.execute("COMMIT")
+                total_written += len(batch)
+                logger.info(f"[CHECKPOINT] Committed batch {i//checkpoint_interval + 1}: {len(batch)} records (total: {total_written})")
+                
+                # Start new transaction for next batch
+                if i + checkpoint_interval < len(data):
+                    isolation_level = getattr(self.config, 'isolation_level', 'READ COMMITTED')
+                    cursor.execute(f"BEGIN ISOLATION LEVEL {isolation_level}")
+                    
+            except psycopg2.Error as e:
+                cursor.execute("ROLLBACK")
+                logger.error(f"[CHECKPOINT] Failed at batch {i//checkpoint_interval + 1}, rolled back {len(batch)} records")
+                raise ValueError(f"PostgreSQL write error at record {total_written}: {e}") from e
+        
+        return total_written
+
     def finalize(self):
         if not self.accumulated_records:
             return
@@ -278,26 +308,62 @@ class PostgresDestination(BaseDestination):
             columns = list(self.accumulated_records[0].keys())
             data = [tuple(record.get(col) for col in columns) for record in self.accumulated_records]
             
+            # START EXPLICIT TRANSACTION (only if not using checkpoints)
+            if not self.config.checkpoint_interval:
+                isolation_level = getattr(self.config, 'isolation_level', 'READ COMMITTED')
+                if isolation_level == 'SERIALIZABLE':
+                    cursor.execute("BEGIN ISOLATION LEVEL SERIALIZABLE")
+                else:
+                    cursor.execute("BEGIN ISOLATION LEVEL READ COMMITTED")
+            
+            # Handle full_refresh mode (legacy)
+            if self.mode == 'full_refresh':
+                cursor.execute(f"TRUNCATE TABLE {self.db_schema}.{self.table}")
+            
+            # Handle write_mode
+            if self.config.write_mode == 'truncate' or self.config.write_mode == 'replace':
+                cursor.execute(f"TRUNCATE TABLE {self.db_schema}.{self.table}")
+            
+            columns = list(self.accumulated_records[0].keys())
+            data = [tuple(record.get(col) for col in columns) for record in self.accumulated_records]
+            
             # Choose INSERT or MERGE based on write_mode
             if self.config.write_mode == 'merge':
                 if not self.config.primary_keys:
                     raise ValueError("write_mode='merge' requires primary_keys configuration")
                 
                 merge_query = self._generate_merge_sql(self.table, columns, self.config.primary_keys)
-                self._execute_batch_insert(cursor, merge_query, data)
-                logger.info(f"[OK] Merged {len(data)} records into {self.db_schema}.{self.table}")
+                
+                # Use checkpointed writes if configured
+                if self.config.checkpoint_interval:
+                    total = self._write_with_checkpoints(conn, cursor, columns, data, merge_query)
+                    logger.info(f"[OK] Merged {total} records into {self.db_schema}.{self.table} with checkpointing")
+                else:
+                    self._execute_batch_insert(cursor, merge_query, data)
+                    cursor.execute("COMMIT")
+                    logger.info(f"[TRANSACTION] Committed {len(data)} records (MERGE)")
             else:
                 # Default: append mode (INSERT)
                 columns_str = ", ".join(f'"{c}"' for c in columns)
                 placeholders = ", ".join(["%s"] * len(columns))
                 insert_query = f"INSERT INTO {self.db_schema}.{self.table} ({columns_str}) VALUES ({placeholders})"
-                self._execute_batch_insert(cursor, insert_query, data)
-                logger.info(f"[OK] Successfully wrote {len(data)} records to {self.db_schema}.{self.table}")
+                
+                # Use checkpointed writes if configured
+                if self.config.checkpoint_interval:
+                    total = self._write_with_checkpoints(conn, cursor, columns, data, insert_query)
+                    logger.info(f"[OK] Wrote {total} records to {self.db_schema}.{self.table} with checkpointing")
+                else:
+                    self._execute_batch_insert(cursor, insert_query, data)
+                    cursor.execute("COMMIT")
+                    logger.info(f"[TRANSACTION] Committed {len(data)} records")
             
-            conn.commit()
         except psycopg2.Error as e:
             if conn:
-                conn.rollback()
+                try:
+                    cursor.execute("ROLLBACK")
+                    logger.warning(f"[TRANSACTION] Rolled back due to error: {e}")
+                except:
+                    conn.rollback()  # Fallback
             raise ValueError(f"PostgreSQL write error: {e}") from e
         finally:
             self.accumulated_records.clear()
