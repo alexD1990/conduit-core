@@ -136,21 +136,28 @@ class SchemaEvolutionManager:
         resource_name: str
     ) -> List[str]:
         """Apply evolution based on config policy. Returns list of executed DDL."""
+
         if not changes.has_changes():
             logger.info("No schema changes detected.")
             return []
+
+        logger.info(f"[DEBUG] Config mode: {config.mode}, auto_add: {config.auto_add_columns}")
+        logger.info(f"[DEBUG] Added columns: {len(changes.added_columns)}")
 
         executed_ddl = []
         dialect = destination.config.type
 
         if changes.added_columns:
+            logger.info(f"[DEBUG] Checking: mode={config.mode}, auto_add={config.auto_add_columns}")
             if config.mode == "auto" and config.auto_add_columns:
-                logger.info(f"[Schema Evolution] {resource_name}")
+                print(f"[Schema Evolution] {resource_name}")
                 for col in changes.added_columns:
+
                     from .schema import TableAutoCreator
                     ddl = TableAutoCreator.generate_add_column_sql(table_name, col, dialect)
                     destination.alter_table(ddl)
                     executed_ddl.append(ddl)
+                    print(f"  [+] Added: {col.name} {col.type}")
                     logger.info(f"  [+] Added: {col.name} {col.type}")
             elif config.mode == "strict":
                 raise SchemaEvolutionError(
@@ -198,8 +205,8 @@ class SchemaEvolutionManager:
                 new_version=new_version
             )
             
-            logger.info(f"  Version: {old_version} → {new_version}")
-            logger.info(f"  Audit: {audit_file}")
+            print(f"  Version: {old_version} → {new_version}")
+            print(f"  Audit: {audit_file}")
 
         return executed_ddl
 

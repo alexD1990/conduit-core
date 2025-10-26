@@ -651,7 +651,7 @@ def run_resource(
                 destination_config.schema_evolution and
                 destination_config.schema_evolution.enabled and
                 inferred_schema and inferred_schema.get("columns") and
-                destination_config.type in ['postgresql', 'snowflake', 'bigquery']
+                destination_config.type in ['postgres', 'snowflake', 'bigquery']
             ):
                 schema_store = SchemaStore()
                 last_schema_data = schema_store.load_last_schema(resource.name)
@@ -662,6 +662,11 @@ def run_resource(
                     logger.info("Comparing inferred schema with last known schema...")
                     evolution_mgr = SchemaEvolutionManager()
                     changes = evolution_mgr.compare_schemas(last_schema, inferred_schema)
+                    
+                    logger.info("Comparing inferred schema with last known schema...")
+                    evolution_mgr = SchemaEvolutionManager()
+                    changes = evolution_mgr.compare_schemas(last_schema, inferred_schema)
+
                     
                     if changes.has_changes():
                         if not dry_run:
