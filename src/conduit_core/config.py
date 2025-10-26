@@ -1,6 +1,6 @@
 # src/conduit_core/config.py
 
-from typing import Optional, List
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 # Import QualityCheck from the new quality module
@@ -95,18 +95,41 @@ class Destination(BaseModel):
     # Schema evolution
     schema_evolution: Optional[SchemaEvolutionConfig] = None
 
+class IncrementalConfig(BaseModel):
+    """Configuration for incremental data loading."""
+    column: str  # The column to track (e.g., updated_at, id)
+    strategy: str = "timestamp"  # timestamp, sequential, cursor
+    lookback_seconds: Optional[int] = None  # Reprocess last N seconds
+    detect_gaps: bool = True  # Warn on missing sequential values
+    initial_value: Optional[Any] = None  # Start value for first run
+    
+    @field_validator('strategy')
+    def validate_strategy(cls, v):
+        allowed = ['timestamp', 'sequential', 'cursor']
+        if v not in allowed:
+            raise ValueError(f"strategy must be one of {allowed}")
+        return v
 
 class Resource(BaseModel):
     name: str
     source: str
     destination: str
     query: str
-    incremental_column: Optional[str] = None
+    incremental_column: Optional[str] = None  # Legacy (deprecated)
+    incremental: Optional[IncrementalConfig] = None  # NEW
     mode: Optional[str] = None
-    export_schema_path: Optional[str] = None  # e.g. "./schemas/users.json"
-
-    # Data Quality
+    export_schema_path: Optional[str] = None
     quality_checks: Optional[List[QualityCheck]] = None
+    
+    @model_validator(mode='after')
+    def convert_legacy_incremental(self):
+        """Convert old incremental_column to new incremental config for backward compatibility."""
+        if self.incremental_column and not self.incremental:
+            self.incremental = IncrementalConfig(
+                column=self.incremental_column,
+                strategy='timestamp'
+            )
+        return self
 
 
 class IngestConfig(BaseModel):
