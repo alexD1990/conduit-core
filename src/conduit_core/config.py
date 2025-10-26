@@ -32,9 +32,11 @@ class Source(BaseModel):
 class SchemaEvolutionConfig(BaseModel):
     enabled: bool = False
     mode: str = "manual"
-    on_new_column: str = "add_nullable"
-    on_removed_column: str = "ignore"
-    on_type_change: str = "fail"
+    auto_add_columns: bool = True
+    on_column_removed: str = "warn"
+    on_type_change: str = "warn"
+    update_yaml: bool = True
+    track_history: bool = True
 
 
 class Destination(BaseModel):
