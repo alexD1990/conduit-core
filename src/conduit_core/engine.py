@@ -278,6 +278,51 @@ def preflight_check(
                                 "status": "pass",
                                 "message": "No drift detected"
                             })
+
+                        # NEW: Schema Evolution Preview
+                        if dest_config.schema_evolution and dest_config.schema_evolution.enabled:
+                            from .schema_evolution import SchemaEvolutionManager
+                            from .schema_store import SchemaStore
+                            
+                            schema_store = SchemaStore()
+                            last_schema_data = schema_store.load_last_schema(resource.name)
+                            
+                            if last_schema_data:
+                                last_schema = last_schema_data.get('schema') if isinstance(last_schema_data, dict) and 'schema' in last_schema_data else last_schema_data
+                                
+                                evolution_mgr = SchemaEvolutionManager()
+                                changes = evolution_mgr.compare_schemas(last_schema, schema)
+                                
+                                if changes.has_changes():
+                                    preview_lines = [f"{resource_prefix} Schema Evolution Preview:"]
+                                    
+                                    if changes.added_columns:
+                                        for col in changes.added_columns:
+                                            from .schema import TableAutoCreator
+                                            ddl = TableAutoCreator.generate_add_column_sql(
+                                                dest_config.table, 
+                                                col, 
+                                                dest_config.type
+                                            )
+                                            preview_lines.append(f"  [+] Would execute: {ddl}")
+                                    
+                                    if changes.removed_columns:
+                                        preview_lines.append(f"  [!] Columns removed from source: {[c.name for c in changes.removed_columns]}")
+                                        preview_lines.append(f"      (Destination data would be preserved)")
+                                    
+                                    if changes.type_changes:
+                                        for tc in changes.type_changes:
+                                            preview_lines.append(f"  [~] Type change detected: {tc.column} ({tc.old_type} → {tc.new_type})")
+                                    
+                                    old_version = last_schema_data.get('version', 0) if isinstance(last_schema_data, dict) else 0
+                                    preview_lines.append(f"  Version: {old_version} → {old_version + 1}")
+                                    
+                                    results["checks"].append({
+                                        "name": f"{resource_prefix} Schema Evolution",
+                                        "status": "info",
+                                        "message": "\n".join(preview_lines)
+                                    })
+
                     except Exception as e:
                         results["warnings"].append(f"{resource_prefix} Could not check schema drift: {str(e)}")
                         
