@@ -34,7 +34,69 @@ from .manifest import PipelineManifest, ManifestTracker
 from .checkpoint import CheckpointManager
 from .incremental import IncrementalSyncManager, IncrementalState
 from .types import coerce_record, TypeCoercer
+from .engine_modules.type_coercion import apply_type_coercion
+from .engine_modules.incremental_sync import setup_incremental_sync, save_incremental_state
 
+def _apply_type_coercion(
+    records: List[Dict[str, Any]],
+    inferred_schema: dict,
+    destination_config: Any,
+    error_log: Any,
+    current_batch_offset: int,
+    logger: Any
+) -> List[Dict[str, Any]]:
+    """
+    Apply type coercion to a batch of records.
+    
+    Args:
+        records: List of records to coerce
+        inferred_schema: Inferred schema with column types
+        destination_config: Destination configuration
+        error_log: Error log to track failures
+        current_batch_offset: Current batch offset for row numbers
+        logger: Logger instance
+    
+    Returns:
+        List of coerced records
+    """
+    if not destination_config.enable_type_coercion or not inferred_schema or not records:
+        return records
+    
+    coerced_records = []
+    for record in records:
+        try:
+            coerced = coerce_record(
+                record,
+                inferred_schema,
+                strict_mode=destination_config.strict_type_coercion,
+                null_values=destination_config.custom_null_values
+            )
+            
+            # Apply custom type mappings if specified
+            if destination_config.type_mappings:
+                coercer = TypeCoercer(
+                    strict_mode=destination_config.strict_type_coercion,
+                    null_values=destination_config.custom_null_values
+                )
+                for col, target_type in destination_config.type_mappings.items():
+                    if col in coerced:
+                        coerced[col] = coercer.coerce(
+                            coerced[col],
+                            target_type,
+                            column_name=col
+                        )
+            
+            coerced_records.append(coerced)
+        except Exception as e:
+            if destination_config.strict_type_coercion:
+                logger.error(f"Type coercion failed for record: {e}")
+                raise
+            else:
+                logger.warning(f"Type coercion failed for record, skipping: {e}")
+                error_log.add_error(record, e, row_number=current_batch_offset + len(coerced_records) + 1)
+    
+    logger.debug(f"Type coercion applied to {len(coerced_records)} records")
+    return coerced_records
 
 def _get_sql_type_for_column(col_type: str, dialect: str) -> str:
     """Map conduit column type to SQL type for given dialect."""
@@ -489,59 +551,13 @@ def run_resource(
                 if checkpoint:
                     last_checkpoint_value = checkpoint['last_value']
                     logger.info(f"Resuming from checkpoint: {source_config.checkpoint_column} > {last_checkpoint_value}")
-
-            # NEW: Use IncrementalSyncManager for better incremental handling
-            incremental_mgr = IncrementalSyncManager()
-            incremental_start_value = None
-            incremental_column = None
-            incremental_values = []  # Track values for gap detection
             
-            # Support both old (incremental_column) and new (incremental config) formats
-            if resource.incremental:
-                incremental_column = resource.incremental.column
-                incremental_start_value = incremental_mgr.calculate_start_value(
-                    resource.name,
-                    resource.incremental.strategy,
-                    resource.incremental.lookback_seconds,
-                    resource.incremental.initial_value
-                )
-            elif resource.incremental_column:
-                # Legacy support
-                incremental_column = resource.incremental_column
-                current_state = load_state()
-                incremental_start_value = last_checkpoint_value if last_checkpoint_value is not None else current_state.get(resource.name)
-            
-            max_value_seen = incremental_start_value
-            final_query = resource.query
-            
-            if incremental_column and incremental_start_value is not None:
-                wrapped_value = f"'{incremental_start_value}'" if isinstance(incremental_start_value, (str, datetime, date)) else incremental_start_value
-                filter_condition = f"{incremental_column} > {wrapped_value}"
-                
-                # Check if ORDER BY exists and insert WHERE before it
-                if "ORDER BY" in final_query.upper():
-                    order_by_pos = final_query.upper().find("ORDER BY")
-                    base_query = final_query[:order_by_pos].strip()
-                    order_clause = final_query[order_by_pos:]
-                    
-                    if "WHERE" in base_query.upper():
-                        final_query = f"{base_query} AND {filter_condition} {order_clause}"
-                    else:
-                        final_query = f"{base_query} WHERE {filter_condition} {order_clause}"
-                else:
-                    if "WHERE" in final_query.upper():
-                        final_query += f" AND {filter_condition}"
-                    else:
-                        final_query += f" WHERE {filter_condition}"
-                    final_query += f" ORDER BY {incremental_column}"
-            elif incremental_column:
-                logger.info(f"Incremental column '{incremental_column}' defined, but no previous state found. Performing full load.")
-                if "ORDER BY" not in final_query.upper():
-                    final_query += f" ORDER BY {incremental_column}"
-            elif resource.incremental_column:
-                logger.info(f"Incremental column '{resource.incremental_column}' defined, but no previous state found. Performing full load.")
-                if "ORDER BY" not in final_query.upper():
-                    final_query += f" ORDER BY {resource.incremental_column}"
+            # Setup incremental sync
+            (incremental_mgr, incremental_column, incremental_start_value, 
+             incremental_values, max_value_seen, final_query) = setup_incremental_sync(
+                resource,
+                last_checkpoint_value,
+            )
             
             # Initialize connectors
             source_class = get_source_connector_map().get(source_config.type)
@@ -880,47 +896,15 @@ def run_resource(
                     else:
                         valid_records_for_write = raw_batch_list
                     
-                    # NEW: Apply type coercion if enabled
-                    if destination_config.enable_type_coercion and inferred_schema and valid_records_for_write:
-                        coerced_records = []
-                        for record in valid_records_for_write:
-                            try:
-                                coerced = coerce_record(
-                                    record,
-                                    inferred_schema,
-                                    strict_mode=destination_config.strict_type_coercion,
-                                    null_values=destination_config.custom_null_values
-                                )
-                                
-                                # Apply custom type mappings if specified
-                                if destination_config.type_mappings:
-                                    coercer = TypeCoercer(
-                                        strict_mode=destination_config.strict_type_coercion,
-                                        null_values=destination_config.custom_null_values
-                                    )
-                                    for col, target_type in destination_config.type_mappings.items():
-                                        if col in coerced:
-                                            coerced[col] = coercer.coerce(
-                                                coerced[col],
-                                                target_type,
-                                                column_name=col
-                                            )
-                                
-                                coerced_records.append(coerced)
-                            except Exception as e:
-                                if destination_config.strict_type_coercion:
-                                    logger.error(f"Type coercion failed for record: {e}")
-                                    raise
-                                else:
-                                    logger.warning(f"Type coercion failed for record, skipping: {e}")
-                                    # Add to error log but continue
-                                    error_log.add_error(record, e, row_number=current_batch_offset + len(coerced_records) + 1)
-                        
-                        valid_records_for_write = coerced_records
-                        logger.debug(f"Type coercion applied to {len(coerced_records)} records")
+                    # Apply type coercion if enabled
+                    valid_records_for_write = apply_type_coercion(
+                        valid_records_for_write,
+                        inferred_schema,
+                        destination_config,
+                        error_log,
+                        current_batch_offset,
+                    )
                     
-                    successful_in_batch = 0
-
                     successful_in_batch = 0
                     if not dry_run and valid_records_for_write:
                         try:
@@ -1018,30 +1002,17 @@ def run_resource(
             if not dry_run:
                 if error_log.has_errors():
                     error_log.save()
-
-                i# Save incremental state and detect gaps
-                if incremental_column:
-                    if max_value_seen is not None and (incremental_start_value is None or max_value_seen > incremental_start_value):
-                        logger.info(f"Saving new incremental state: {incremental_column} = {max_value_seen}")
-                        max_value_str = max_value_seen.isoformat() if isinstance(max_value_seen, (datetime, date)) else max_value_seen
-                        
-                        # Use new manager if using incremental config
-                        if resource.incremental:
-                            incremental_mgr.state.save_last_value(resource.name, max_value_str)
-                            
-                            # Detect gaps if enabled
-                            if resource.incremental.detect_gaps and resource.incremental.strategy == 'sequential':
-                                gaps = incremental_mgr.detect_gaps(incremental_values, resource.incremental.strategy)
-                                if gaps:
-                                    logger.warning(f"[GAP DETECTION] Found {len(gaps)} gap(s) in {incremental_column}")
-                                    for gap in gaps[:5]:  # Show first 5 gaps
-                                        logger.warning(f"  Missing {gap['missing_count']} value(s) between {gap['after']} and {gap['before']}")
-                        else:
-                            # Legacy support
-                            save_state({**load_state(), resource.name: max_value_str})
-                    else:
-                        logger.info(f"No new records found. State remains at {incremental_start_value}.")
-
+                
+                # Save incremental state and detect gaps
+                save_incremental_state(
+                    resource,
+                    incremental_column,
+                    max_value_seen,
+                    incremental_start_value,
+                    incremental_mgr,
+                    incremental_values,
+                )
+                
                 if source_config.resume:
                     logger.info("Clearing checkpoint...")
                     checkpoint_mgr.clear_checkpoint(resource.name)
