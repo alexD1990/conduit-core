@@ -260,7 +260,7 @@ class SnowflakeDestination(BaseDestination):
             
             if self.mode == 'full_refresh':
                 logger.info(f"🗑️  TRUNCATE {self.table} (full_refresh mode)")
-                cursor.execute(f"TRUNCATE TABLE IF EXISTS {self.database}.{self.db_schema}.{self.table}")
+                cursor.execute(f'TRUNCATE TABLE IF EXISTS "{self.database}"."{self.db_schema}"."{self.table}"')
             
             with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv', newline='', encoding='utf-8') as temp_csv:
                 temp_csv_path = temp_csv.name
@@ -279,7 +279,7 @@ class SnowflakeDestination(BaseDestination):
             
             # Handle write_mode
             if self.config.write_mode == 'truncate' or self.config.write_mode == 'replace':
-                cursor.execute(f"TRUNCATE TABLE IF EXISTS {self.database}.{self.db_schema}.{self.table}")
+                cursor.execute(f'TRUNCATE TABLE IF EXISTS "{self.database}"."{self.db_schema}"."{self.table}"')
             
             # Choose COPY or MERGE based on write_mode
             if self.config.write_mode == 'merge':
