@@ -49,6 +49,10 @@ class Destination(BaseModel):
     update_strategy: str = "update_all"
     isolation_level: str = "READ COMMITTED"
     checkpoint_interval: Optional[int] = None
+    enable_type_coercion: bool = True  
+    strict_type_coercion: bool = False  
+    custom_null_values: Optional[List[str]] = None  
+    type_mappings: Optional[Dict[str, str]] = None  
     path: Optional[str] = None
     bucket: Optional[str] = None
 

@@ -33,6 +33,7 @@ from .connectors.registry import get_source_connector_map, get_destination_conne
 from .manifest import PipelineManifest, ManifestTracker
 from .checkpoint import CheckpointManager
 from .incremental import IncrementalSyncManager, IncrementalState
+from .types import coerce_record, TypeCoercer
 
 
 def _get_sql_type_for_column(col_type: str, dialect: str) -> str:
@@ -878,6 +879,47 @@ def run_resource(
                                 error_log.add_quality_error(invalid_result.record, failure_summary, row_number=row_number)
                     else:
                         valid_records_for_write = raw_batch_list
+                    
+                    # NEW: Apply type coercion if enabled
+                    if destination_config.enable_type_coercion and inferred_schema and valid_records_for_write:
+                        coerced_records = []
+                        for record in valid_records_for_write:
+                            try:
+                                coerced = coerce_record(
+                                    record,
+                                    inferred_schema,
+                                    strict_mode=destination_config.strict_type_coercion,
+                                    null_values=destination_config.custom_null_values
+                                )
+                                
+                                # Apply custom type mappings if specified
+                                if destination_config.type_mappings:
+                                    coercer = TypeCoercer(
+                                        strict_mode=destination_config.strict_type_coercion,
+                                        null_values=destination_config.custom_null_values
+                                    )
+                                    for col, target_type in destination_config.type_mappings.items():
+                                        if col in coerced:
+                                            coerced[col] = coercer.coerce(
+                                                coerced[col],
+                                                target_type,
+                                                column_name=col
+                                            )
+                                
+                                coerced_records.append(coerced)
+                            except Exception as e:
+                                if destination_config.strict_type_coercion:
+                                    logger.error(f"Type coercion failed for record: {e}")
+                                    raise
+                                else:
+                                    logger.warning(f"Type coercion failed for record, skipping: {e}")
+                                    # Add to error log but continue
+                                    error_log.add_error(record, e, row_number=current_batch_offset + len(coerced_records) + 1)
+                        
+                        valid_records_for_write = coerced_records
+                        logger.debug(f"Type coercion applied to {len(coerced_records)} records")
+                    
+                    successful_in_batch = 0
 
                     successful_in_batch = 0
                     if not dry_run and valid_records_for_write:
