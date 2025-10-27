@@ -42,6 +42,8 @@ from .engine_modules.schema_operations import (
     handle_schema_evolution,
     auto_create_table
 )
+from conduit_core.execution.parallel_extraction import ParallelExtractor
+from conduit_core.engine_modules.quality_checks import ColumnStats
 
 
 def _get_sql_type_for_column(col_type: str, dialect: str) -> str:
@@ -511,6 +513,9 @@ def run_resource(
             destination_class = get_destination_connector_map().get(destination_config.type)
             destination = destination_class(destination_config)
 
+            # Store query on source for parallel extraction
+            source._current_query = final_query
+
             # --- Schema Operations ---
             # Infer schema if enabled
             inferred_schema = None
@@ -705,8 +710,54 @@ def run_resource(
                 logger.info(f"Initializing Quality Validator with {len(resource.quality_checks)} check(s)...")
                 validator = QualityValidator(resource.quality_checks)
 
-            # --- Processing Loop ---
-            processing_loop = read_in_batches(source_iterator, batch_size=batch_size)
+                # Enhanced quality checks
+            quality_analyzer = None
+            enhanced_checks = getattr(resource, 'enhanced_quality_checks', None)
+            if enhanced_checks and enhanced_checks.get('enabled'):
+                from conduit_core.engine_modules.quality_checks import QualityAnalyzer
+                import json
+                from pathlib import Path
+                
+                quality_analyzer = QualityAnalyzer()
+                logger.info("Enhanced quality checks enabled")
+                
+                # Load baseline if exists
+                baseline_path = enhanced_checks.get('baseline_path')
+                if baseline_path:
+                    baseline_file = Path(baseline_path)
+                    if baseline_file.exists():
+                        with open(baseline_file, 'r') as f:
+                            baseline_data = json.load(f)
+                            quality_analyzer.baseline_stats = {
+                                col: ColumnStats(**stats)
+                                for col, stats in baseline_data.items()
+                            }
+                            logger.info(f"Loaded baseline from {baseline_path}")
+
+            # --- Processing Loop with Parallel Extraction Support ---
+            
+            # Parallel extraction config
+            parallel_config = getattr(config, 'parallel_extraction', None) or {}
+            max_workers = parallel_config.get("max_workers", 4)
+            parallel_batch_size = parallel_config.get("batch_size", 10000)
+            
+            from conduit_core.execution.parallel_extraction import ParallelExtractor
+            extractor = ParallelExtractor(max_workers=max_workers, batch_size=parallel_batch_size)
+            
+            # Attempt to get row count for parallel planning
+            total_rows = source.count_rows() if hasattr(source, 'count_rows') else None
+            
+            if total_rows:
+                logger.info(
+                    f"Parallel extraction enabled: {max_workers} workers, "
+                    f"batch_size={parallel_batch_size}, total_rows={total_rows}"
+                )
+            
+            # Create parallel-aware source iterator
+            parallel_source_iterator = extractor.extract_parallel(source, total_rows)
+            
+            # Use existing batch processing on top of parallel extraction
+            processing_loop = read_in_batches(parallel_source_iterator, batch_size=batch_size)
 
             with Progress(
                 TextColumn("[progress.description]{task.description}"),
@@ -743,7 +794,7 @@ def run_resource(
 
                             # The following references QualityAction from quality module; leaving logic intact.
                             highest_action: QualityAction = QualityAction.DLQ
-                            relevant_checks = [qc for qc in resource.quality_checks if qc.column in [fc.column for fc in invalid_result.failed_checks]]
+                            relevant_checks = [qc for qc in (resource.quality_checks or []) if qc.column in [fc.column for fc in invalid_result.failed_checks]]
                             for failure in invalid_result.failed_checks:
                                 check_config = next((qc for qc in relevant_checks if qc.column == failure.column and qc.check == failure.check_name), None)
                                 action = check_config.action if check_config else QualityAction.DLQ
@@ -763,6 +814,26 @@ def run_resource(
                             else:
                                 logger.debug(f"Record #{row_number or '?'} failed quality check (DLQ): {failure_summary}")
                                 error_log.add_quality_error(invalid_result.record, failure_summary, row_number=row_number)
+
+                    # Enhanced quality analysis (AFTER the entire validator block)
+                    if quality_analyzer and i == 0:  # First batch only
+                        current_stats = quality_analyzer.analyze_batch(raw_batch_list)
+                        
+                        if not quality_analyzer.baseline_stats:
+                            quality_analyzer.set_baseline(current_stats)
+                            logger.info("Baseline statistics captured from first batch")
+                        else:
+                            # Detect anomalies
+                            anomalies = quality_analyzer.detect_anomalies(
+                                current_stats,
+                                enhanced_checks.get('thresholds') if enhanced_checks else None
+                            )
+                            for anomaly in anomalies:
+                                severity_log = logger.warning if anomaly.severity == 'warning' else logger.error
+                                severity_log(
+                                    f"Anomaly in {anomaly.column}: {anomaly.message} "
+                                    f"(expected={anomaly.expected:.2f}, actual={anomaly.actual:.2f})"
+                                )
                     else:
                         valid_records_for_write = raw_batch_list
                     
