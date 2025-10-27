@@ -36,67 +36,13 @@ from .incremental import IncrementalSyncManager, IncrementalState
 from .types import coerce_record, TypeCoercer
 from .engine_modules.type_coercion import apply_type_coercion
 from .engine_modules.incremental_sync import setup_incremental_sync, save_incremental_state
+from .engine_modules.preflight import preflight_check, run_preflight
+from .engine_modules.schema_operations import (
+    infer_schema_from_source,
+    handle_schema_evolution,
+    auto_create_table
+)
 
-def _apply_type_coercion(
-    records: List[Dict[str, Any]],
-    inferred_schema: dict,
-    destination_config: Any,
-    error_log: Any,
-    current_batch_offset: int,
-    logger: Any
-) -> List[Dict[str, Any]]:
-    """
-    Apply type coercion to a batch of records.
-    
-    Args:
-        records: List of records to coerce
-        inferred_schema: Inferred schema with column types
-        destination_config: Destination configuration
-        error_log: Error log to track failures
-        current_batch_offset: Current batch offset for row numbers
-        logger: Logger instance
-    
-    Returns:
-        List of coerced records
-    """
-    if not destination_config.enable_type_coercion or not inferred_schema or not records:
-        return records
-    
-    coerced_records = []
-    for record in records:
-        try:
-            coerced = coerce_record(
-                record,
-                inferred_schema,
-                strict_mode=destination_config.strict_type_coercion,
-                null_values=destination_config.custom_null_values
-            )
-            
-            # Apply custom type mappings if specified
-            if destination_config.type_mappings:
-                coercer = TypeCoercer(
-                    strict_mode=destination_config.strict_type_coercion,
-                    null_values=destination_config.custom_null_values
-                )
-                for col, target_type in destination_config.type_mappings.items():
-                    if col in coerced:
-                        coerced[col] = coercer.coerce(
-                            coerced[col],
-                            target_type,
-                            column_name=col
-                        )
-            
-            coerced_records.append(coerced)
-        except Exception as e:
-            if destination_config.strict_type_coercion:
-                logger.error(f"Type coercion failed for record: {e}")
-                raise
-            else:
-                logger.warning(f"Type coercion failed for record, skipping: {e}")
-                error_log.add_error(record, e, row_number=current_batch_offset + len(coerced_records) + 1)
-    
-    logger.debug(f"Type coercion applied to {len(coerced_records)} records")
-    return coerced_records
 
 def _get_sql_type_for_column(col_type: str, dialect: str) -> str:
     """Map conduit column type to SQL type for given dialect."""
@@ -566,9 +512,9 @@ def run_resource(
             destination = destination_class(destination_config)
 
             # --- Schema Operations ---
+            # Infer schema if enabled
             inferred_schema = None
             source_iterator = None
-
             if source_config.infer_schema:
                 logger.info("Inferring schema from source data...")
                 sample_records_iter = source.read(final_query)
@@ -580,7 +526,6 @@ def run_resource(
                 except StopIteration:
                     logger.debug("Source iterator consumed by schema sample, using sampled records.")
                     source_iterator = iter(sample_records)
-
                 if sample_records:
                     inferred_schema = SchemaInferrer.infer_schema(sample_records, source_config.schema_sample_size)
                     logger.info(f"Schema inferred: {len(inferred_schema.get('columns', []))} columns")
@@ -733,92 +678,17 @@ def run_resource(
                         )
 
             # --- Schema Evolution ---
-            if (
-                destination_config.schema_evolution and
-                destination_config.schema_evolution.enabled and
-                inferred_schema and inferred_schema.get("columns") and
-                destination_config.type in ['postgres', 'snowflake', 'bigquery']
-            ):
-                schema_store = SchemaStore()
-                last_schema_data = schema_store.load_last_schema(resource.name)
-                
-                if last_schema_data:
-                    last_schema = last_schema_data.get('schema') if isinstance(last_schema_data, dict) and 'schema' in last_schema_data else last_schema_data
-                    
-                    logger.info("Comparing inferred schema with last known schema...")
-                    evolution_mgr = SchemaEvolutionManager()
-                    changes = evolution_mgr.compare_schemas(last_schema, inferred_schema)
-                    
-                    logger.info("Comparing inferred schema with last known schema...")
-                    evolution_mgr = SchemaEvolutionManager()
-                    changes = evolution_mgr.compare_schemas(last_schema, inferred_schema)
+            handle_schema_evolution(
+                resource,
+                destination,
+                destination_config,
+                inferred_schema,
+                tracker,
+                dry_run
+            )
 
-                    
-                    if changes.has_changes():
-                        if not dry_run:
-                            try:
-                                executed_ddl = evolution_mgr.apply_evolution(
-                                    destination, 
-                                    destination_config.table, 
-                                    changes, 
-                                    destination_config.schema_evolution,
-                                    resource.name
-                                )
-                                
-                                if executed_ddl:
-                                    new_version = schema_store.save_schema(resource.name, inferred_schema)
-                                    
-                                    tracker.metadata['schema_evolution'] = {
-                                        'version': new_version,
-                                        'changes_summary': changes.summary(),
-                                        'ddl_executed': executed_ddl
-                                    }
-                                    
-                            except SchemaEvolutionError as e:
-                                logger.error(f"Schema evolution failed: {e}. Halting pipeline.")
-                                raise
-                        else:
-                            logger.info("DRY RUN: Skipping schema evolution actions.", prefix="[WARN]")
-                    else:
-                        logger.info("No schema changes detected.")
-                else:
-                    logger.info("No previous schema found. Saving current schema as baseline.")
-                    schema_store.save_schema(resource.name, inferred_schema)
-
-            # Auto-create table
-            if destination_config.auto_create_table and inferred_schema:
-                if destination_config.type in ['postgres', 'snowflake', 'bigquery']:
-                    logger.info(f"Auto-creating table in {destination_config.type}...")
-                    dialect_map = {'postgres': 'postgresql', 'snowflake': 'snowflake', 'bigquery': 'bigquery'}
-                    try:
-                        # For Snowflake, include database.schema prefix
-                        if destination_config.type == 'snowflake':
-                            full_table_name = f'{destination.database}.{destination.db_schema}.{destination_config.table}'
-                        else:
-                            full_table_name = destination_config.table
-
-                        create_sql = TableAutoCreator.generate_create_table_sql(full_table_name, inferred_schema, dialect_map[destination_config.type])
-
-                        # For Snowflake, fix the quoting in generated SQL
-                        if destination_config.type == 'snowflake':
-                            # Replace "database.schema.table" with database.schema."table"
-                            quoted_full = f'"{destination.database}.{destination.db_schema}.{destination_config.table}"'
-                            unquoted_path = f'{destination.database}.{destination.db_schema}."{destination_config.table}"'
-                            create_sql = create_sql.replace(quoted_full, unquoted_path)
-                        logger.info(f"Generated SQL:\n{create_sql}")
-                        if not dry_run:
-                            try:
-                                destination.execute_ddl(create_sql)
-                                logger.info(f"Table '{destination_config.table}' created successfully.")
-                            except Exception as e:
-                                logger.error(f"Failed to auto-create table: {e}")
-                                raise
-                        else:
-                            logger.info("DRY RUN: Skipping table creation.", prefix="[WARN]")
-                    except ValueError as e:
-                        logger.warning(f"Could not generate CREATE TABLE SQL (schema likely empty): {e}")
-                    except Exception as e:
-                        logger.error(f"Error during CREATE TABLE SQL generation: {e}", exc_info=True)
+            # Auto-create table if needed
+            auto_create_table(destination, destination_config, inferred_schema, dry_run)
 
             # --- End Schema Operations ---
 
