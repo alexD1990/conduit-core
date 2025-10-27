@@ -124,6 +124,7 @@ class Resource(BaseModel):
     mode: Optional[str] = None
     export_schema_path: Optional[str] = None
     quality_checks: Optional[List[QualityCheck]] = None
+    enhanced_quality_checks: Optional[Dict[str, Any]] = None
     
     @model_validator(mode='after')
     def convert_legacy_incremental(self):
