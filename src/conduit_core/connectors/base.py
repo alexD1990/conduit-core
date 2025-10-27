@@ -1,7 +1,7 @@
 # src/conduit_core/connectors/base.py
 
 from abc import ABC, abstractmethod
-from typing import Iterable, Dict, Any, Optional
+from typing import Iterable, Iterator, Dict, Any, Optional
 
 class BaseSource(ABC):
     """En 'kontrakt' for alle datakilde-konnektorer."""
@@ -38,6 +38,24 @@ class BaseSource(ABC):
             int: Estimated record count, or None if unknown
         """
         return None  # Default: unknown
+
+    def read_batch(self, offset: int, limit: int) -> Iterator[dict[str, Any]]:
+        """
+        Optional: Read a specific batch for parallel extraction.
+        
+        Sources that support pagination should implement this.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support parallel extraction"
+        )
+        
+    def count_rows(self) -> Optional[int]:
+        """
+        Optional: Return total row count for parallel extraction planning.
+        
+        Return None if count is expensive/unavailable.
+        """
+        return None
 
 class BaseDestination(ABC):
     """En 'kontrakt' for alle destinasjons-konnektorer."""

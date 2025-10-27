@@ -1,7 +1,7 @@
 # src/conduit_core/connectors/postgresql.py
 import logging
 import os
-from typing import Iterable, Dict, Any, Optional, List
+from typing import Iterable, Iterator, Dict, Any, Optional, List
 import psycopg2
 from psycopg2.extras import RealDictCursor, execute_batch
 from dotenv import load_dotenv
@@ -11,6 +11,7 @@ from ..config import Source as SourceConfig
 from ..config import Destination as DestinationConfig
 from ..utils.retry import retry_with_backoff
 from ..errors import ConnectionError
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,54 @@ class PostgresSource(BaseSource):
                 cursor.close()
             if conn:
                 conn.close()
+
+    def count_rows(self) -> Optional[int]:
+        """Get total row count for parallel extraction planning."""
+        try:
+            query = getattr(self, '_current_query', None)
+            if not query or query == 'n/a':
+                return None
+            
+            if query.strip().upper().startswith('SELECT * FROM'):
+                table_match = re.match(r'SELECT \* FROM (\w+\.?\w*)', query, re.IGNORECASE)
+                if table_match:
+                    table_name = table_match.group(1)
+                    count_query = f"SELECT COUNT(*) as total FROM {table_name}"
+                else:
+                    return None
+            else:
+                count_query = f"SELECT COUNT(*) as total FROM ({query}) as subquery"
+            
+            conn = psycopg2.connect(self.connection_string)
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute(count_query)
+                    result = cursor.fetchone()
+                    return result[0] if result else None
+            finally:
+                conn.close()
+                
+        except Exception as e:
+            logger.warning(f"Failed to count rows: {e}")
+            return None
+            
+    def read_batch(self, offset: int, limit: int) -> Iterator[Dict[str, Any]]:
+        """Read a specific batch for parallel extraction."""
+        base_query = getattr(self, '_current_query', None)
+        
+        if not base_query or base_query == 'n/a':
+            raise ValueError("PostgresSource requires a SQL query for batch reading")
+        
+        paginated_query = f"{base_query} LIMIT {limit} OFFSET {offset}"
+        
+        conn = psycopg2.connect(self.connection_string)
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(paginated_query)
+                for row in cursor:
+                    yield dict(row)
+        finally:
+            conn.close()
 
 
 class PostgresDestination(BaseDestination):

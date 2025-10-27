@@ -42,6 +42,7 @@ from .engine_modules.schema_operations import (
     handle_schema_evolution,
     auto_create_table
 )
+from conduit_core.execution.parallel_extraction import ParallelExtractor
 
 
 def _get_sql_type_for_column(col_type: str, dialect: str) -> str:
@@ -511,6 +512,9 @@ def run_resource(
             destination_class = get_destination_connector_map().get(destination_config.type)
             destination = destination_class(destination_config)
 
+            # Store query on source for parallel extraction
+            source._current_query = final_query
+
             # --- Schema Operations ---
             # Infer schema if enabled
             inferred_schema = None
@@ -705,8 +709,30 @@ def run_resource(
                 logger.info(f"Initializing Quality Validator with {len(resource.quality_checks)} check(s)...")
                 validator = QualityValidator(resource.quality_checks)
 
-            # --- Processing Loop ---
-            processing_loop = read_in_batches(source_iterator, batch_size=batch_size)
+            # --- Processing Loop with Parallel Extraction Support ---
+            
+            # Parallel extraction config
+            parallel_config = getattr(config, 'parallel_extraction', None) or {}
+            max_workers = parallel_config.get("max_workers", 4)
+            parallel_batch_size = parallel_config.get("batch_size", 10000)
+            
+            from conduit_core.execution.parallel_extraction import ParallelExtractor
+            extractor = ParallelExtractor(max_workers=max_workers, batch_size=parallel_batch_size)
+            
+            # Attempt to get row count for parallel planning
+            total_rows = source.count_rows() if hasattr(source, 'count_rows') else None
+            
+            if total_rows:
+                logger.info(
+                    f"Parallel extraction enabled: {max_workers} workers, "
+                    f"batch_size={parallel_batch_size}, total_rows={total_rows}"
+                )
+            
+            # Create parallel-aware source iterator
+            parallel_source_iterator = extractor.extract_parallel(source, total_rows)
+            
+            # Use existing batch processing on top of parallel extraction
+            processing_loop = read_in_batches(parallel_source_iterator, batch_size=batch_size)
 
             with Progress(
                 TextColumn("[progress.description]{task.description}"),

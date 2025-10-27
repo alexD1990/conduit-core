@@ -140,6 +140,7 @@ class IngestConfig(BaseModel):
     sources: List[Source]
     destinations: List[Destination]
     resources: List[Resource]
+    parallel_extraction: Optional[Dict[str, Any]] = None
 
 def load_config(filepath: str) -> IngestConfig:
     """Load and validate ingest config from YAML file."""
