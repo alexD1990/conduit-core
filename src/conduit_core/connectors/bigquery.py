@@ -1,16 +1,27 @@
 # src/conduit_core/connectors/bigquery.py
 import logging
 from typing import Iterable, Dict, Any, Optional
-
 from google.cloud import bigquery
 from google.oauth2 import service_account
 from google.api_core.exceptions import GoogleAPICallError, NotFound
-
+from decimal import Decimal
+from datetime import date, datetime
 from .base import BaseDestination
 from ..config import Destination as DestinationConfig
 from ..errors import ConnectionError
 
 logger = logging.getLogger(__name__)
+
+
+def _convert_for_bigquery(value):
+    """Convert Python types to BigQuery-compatible JSON types."""
+    if isinstance(value, Decimal):
+        return float(value)
+    elif isinstance(value, (date, datetime)):
+        return value.isoformat()
+    elif isinstance(value, bytes):
+        return value.decode('utf-8', errors='replace')
+    return value
 
 
 class BigQueryDestination(BaseDestination):
@@ -31,7 +42,7 @@ class BigQueryDestination(BaseDestination):
         self.table_id = f"{self.project_id}.{self.dataset_id}.{self.table_name}"
         self.accumulated_records = []
         self.mode = getattr(config, 'mode', 'append')
-
+        
         logger.info(f"BigQueryDestination initialized for table: {self.table_id}")
 
     def _get_client(self) -> bigquery.Client:
@@ -54,6 +65,7 @@ class BigQueryDestination(BaseDestination):
         except Exception as e:
             error_msg = str(e)
             suggestions = []
+            
             if "404" in error_msg or "not found" in error_msg.lower():
                 suggestions.append(f"Ensure the dataset exists: bq mk {self.project_id}:{self.dataset_id}")
                 suggestions.append("Check the dataset name for typos.")
@@ -70,6 +82,7 @@ class BigQueryDestination(BaseDestination):
             ) from e
 
     def execute_ddl(self, sql: str) -> None:
+        """Execute DDL statement."""
         try:
             query_job = self.client.query(sql)
             query_job.result()
@@ -78,73 +91,45 @@ class BigQueryDestination(BaseDestination):
             logger.error(f"BigQuery DDL execution failed: {e}")
             raise
 
-    def alter_table(self, alter_sql: str) -> None:
-        """Execute ALTER TABLE statement."""
-        self.execute_ddl(alter_sql)
-
-    # --- Phase 3 additions ---
-    def get_table_schema(self) -> Optional[Dict[str, Any]]:
-        """Get table schema from BigQuery"""
-        from google.api_core.exceptions import NotFound
-
-        try:
-            table = self.client.get_table(self.table_id)
-
-            schema = {}
-            for field in table.db_schema:
-                internal_type = self._map_bq_type_to_internal(field.field_type)
-                schema[field.name] = {
-                    'type': internal_type,
-                    'nullable': (field.mode != 'REQUIRED')
-                }
-
-            return schema
-        except NotFound:
-            logger.info(f"Table '{self.table_id}' not found, returning None.")
-            return None
-        except Exception as e:
-            logger.error(f"Failed to get table schema for '{self.table_id}': {e}")
-            raise ConnectionError(f"Failed to get table schema: {e}") from e
-
-    def _map_bq_type_to_internal(self, bq_type: str) -> str:
-        """Map BigQuery type to internal schema type"""
-        type_mapping = {
-            'INTEGER': 'integer',
-            'INT64': 'integer',
-            'FLOAT': 'float',
-            'FLOAT64': 'float',
-            'NUMERIC': 'decimal',
-            'BIGNUMERIC': 'decimal',
-            'BOOLEAN': 'boolean',
-            'BOOL': 'boolean',
-            'DATE': 'date',
-            'DATETIME': 'datetime',
-            'TIMESTAMP': 'datetime',
-            'STRING': 'string',
-        }
-        return type_mapping.get(bq_type.upper(), 'string')
-    # --- End Phase 3 additions ---
-
     def write(self, records: Iterable[Dict[str, Any]]):
         """Accumulates records in memory."""
-        self.accumulated_records.extend(list(records))
+        # Convert Decimal and other types to JSON-serializable types
+        converted_records = []
+        for record in records:
+            converted = {k: _convert_for_bigquery(v) for k, v in record.items()}
+            converted_records.append(converted)
+        self.accumulated_records.extend(converted_records)
 
     def finalize(self):
         """Loads all accumulated records into BigQuery using a Load Job."""
         if not self.accumulated_records:
             logger.info("No records to write to BigQuery.")
             return
-
+        
+        # Check if table exists
+        table_exists = False
+        try:
+            self.client.get_table(self.table_id)
+            table_exists = True
+        except:
+            pass
+        
         job_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
             autodetect=True,
+            create_disposition=bigquery.CreateDisposition.CREATE_IF_NEEDED,
         )
-
+        
         if self.mode == 'full_refresh':
-            job_config.write_disposition = bigquery.WriteDisposition.WRITE_TRUNCATE
+            if table_exists:
+                # Delete table for full refresh
+                self.client.delete_table(self.table_id, not_found_ok=True)
+                logger.info(f"🗑️  Deleted table {self.table_id} (full_refresh mode)")
+            # Use WRITE_EMPTY to create fresh table
+            job_config.write_disposition = bigquery.WriteDisposition.WRITE_EMPTY
         else:
             job_config.write_disposition = bigquery.WriteDisposition.WRITE_APPEND
-
+        
         try:
             load_job = self.client.load_table_from_json(
                 self.accumulated_records,
@@ -152,18 +137,12 @@ class BigQueryDestination(BaseDestination):
                 job_config=job_config,
             )
             load_job.result()
-
+            
             if load_job.errors:
                 raise ValueError(f"BigQuery load job failed: {load_job.errors}")
             
             logger.info(f"[OK] Successfully loaded {load_job.output_rows} rows to {self.table_id}")
-
-        except NotFound:
-            if self.config.auto_create_table:
-                logger.error(f"Table '{self.table_id}' not found. Auto-create failed or skipped.")
-                raise ValueError(f"Table '{self.table_id}' not found. Auto-create failed or skipped.")
-            else:
-                raise ValueError(f"The BigQuery table '{self.table_id}' does not exist. Enable 'auto_create_table' in your destination config to create it.") from None
+            
         except Exception as e:
             logger.error(f"[FAIL] Unexpected error during BigQuery load job: {e}")
             raise
@@ -173,27 +152,9 @@ class BigQueryDestination(BaseDestination):
     def table_exists(self) -> bool:
         """Check if the destination table exists."""
         try:
-            from google.cloud.exceptions import NotFound
             self.client.get_table(self.table_id)
             return True
         except NotFound:
             return False
         except Exception as e:
             raise ValueError(f"Failed to check table existence: {e}")
-
-    def get_table_schema(self) -> dict:
-        """Get schema of existing table."""
-        try:
-            table = self.client.get_table(self.table_id)
-            
-            columns = []
-            for field in table.schema:
-                columns.append({
-                    "name": field.name,
-                    "type": field.field_type,
-                    "nullable": field.mode != 'REQUIRED'
-                })
-            
-            return {"columns": columns}
-        except Exception as e:
-            raise ValueError(f"Failed to get table schema: {e}")
