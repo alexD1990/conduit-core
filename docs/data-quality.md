@@ -1,214 +1,854 @@
-# Data Quality — Conduit Core
+# Data Quality — Schema Validation & Quality Checks
 
-Conduit Core includes a built-in data quality framework that validates records during ingestion.
-It lets you define column-level rules directly in your `ingest.yml` and choose how violations are handled.
+Comprehensive guide to Conduit Core's dual-layer quality assurance: schema validation (structure) and data quality checks (values).
+
+---
 
 ## Overview
 
-Conduit Core introduces a **first-class Data Quality Framework** — enabling you to define validation rules declaratively in your ```ingest.yml```.
-The framework runs automated checks on source data before writing to destinations, ensuring integrity, consistency, and reliability across pipelines.
+Conduit Core provides **two complementary quality systems**:
 
-### Quality rules can:
+1. **Schema Validation** — Structural integrity (columns, types, constraints)
+2. **Quality Checks** — Value-level validation (format, range, uniqueness)
 
-* Enforce **business constraints** (e.g., no null IDs, valid email formats)
-* Prevent **bad data propagation**
-* Automatically route invalid rows to a **Dead-Letter Queue (DLQ)**
-* Either **fail**, **warn**, or send records to the **DLQ**.
+Together, they ensure both the **structure** and **content** of your data meet requirements before writes occur.
 
-## Configuration
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    QUALITY PIPELINE                          │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  1. Schema Validation (Pre-flight)                           │
+│     ↓                                                        │
+│     • Compare source vs destination schemas                  │
+│     • Detect type mismatches                                 │
+│     • Flag missing/extra columns                             │
+│     • Validate constraints (NOT NULL)                        │
+│                                                              │
+│  2. Data Quality Checks (Runtime)                            │
+│     ↓                                                        │
+│     • Validate record values                                 │
+│     • Apply business rules                                   │
+│     • Route failures (fail/warn/dlq)                         │
+│                                                              │
+│  3. Write (Only if passed)                                   │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Part 1: Schema Validation
+
+### Purpose
+
+Prevents pipeline failures by detecting **structural incompatibilities** before execution:
+- Missing required columns
+- Type mismatches (e.g., `string` → `integer`)
+- Constraint violations (nullable → NOT NULL)
+- Schema drift detection
+
+### When It Runs
+
+**Automatically** during:
+- `conduit run` (pre-flight phase)
+- `conduit validate` (explicit check)
+- `conduit preflight` (comprehensive health check)
+
+### Configuration
+
+**Enable in destination config:**
+```yaml
+destinations:
+  - name: warehouse
+    type: postgresql
+    table: users
+    validate_schema: true        # Enable validation
+    strict_validation: false     # Treat warnings as errors if true
+    required_columns:            # Optional: enforce specific columns
+      - id
+      - email
+      - created_at
+```
+
+### Validation Rules
+
+| Check                  | Description                                      | Severity |
+|------------------------|--------------------------------------------------|----------|
+| **Type Compatibility** | Source type can convert to destination type      | Error    |
+| **Required Columns**   | All `required_columns` present in source         | Error    |
+| **Missing Columns**    | Destination columns not in source                | Warning  |
+| **Constraint Violation** | Nullable source → NOT NULL destination         | Error    |
+| **Extra Columns**      | Source columns not in destination                | Warning  |
+
+### Type Compatibility Matrix
+
+```python
+# Safe conversions (source → destination)
+integer  → [integer, float, decimal, string]
+float    → [float, decimal, string]
+decimal  → [decimal, string]
+string   → [string]
+boolean  → [boolean, integer, string]
+date     → [date, datetime, string]
+datetime → [datetime, string]
+```
+
+**Examples:**
+- ✅ `integer` → `float` (safe widening)
+- ✅ `date` → `string` (safe conversion)
+- ❌ `string` → `integer` (unsafe, may fail at runtime)
+- ❌ `float` → `integer` (precision loss)
+
+### CLI Commands
+
+**Pre-flight Validation:**
+```bash
+conduit validate my_resource --file ingest.yml
+```
+
+**Output:**
+```
+✓ Configuration syntax valid
+✓ Source connection (csv)
+✓ Destination connection (postgresql)
+✓ Schema inferred (5 columns)
+✓ Type compatibility passed
+⚠ Warning: Column 'deprecated_field' in destination not present in source
+✓ All required columns present
+```
+
+**Schema Comparison:**
+```bash
+conduit schema-compare my_resource --file ingest.yml
+```
+
+**Output:**
+```
+Schema Drift Detected:
+  [+] ADDED: signup_date (DATE, nullable)
+  [-] REMOVED: old_status (VARCHAR)
+  [~] CHANGED: amount (INTEGER → DECIMAL)
+```
+
+**Schema Inference & Export:**
+```bash
+conduit schema my_resource --format json --output schema.json
+```
+
+### Validation Report Structure
+
+```python
+# Internal API (schema_validator.py)
+ValidationReport(
+    is_valid: bool,
+    errors: [
+        ValidationError(
+            column='age',
+            issue='type_mismatch',
+            expected='integer',
+            actual='string',
+            severity='error'
+        )
+    ],
+    warnings: [
+        ValidationError(
+            column='deprecated_field',
+            issue='missing_column',
+            severity='warning'
+        )
+    ]
+)
+```
+
+### Integration with Schema Evolution
+
+When **both** validation and evolution are enabled:
 
 ```yaml
-# Each resource in your ingest.yml can specify a list of quality checks.
+destinations:
+  - name: warehouse
+    type: postgresql
+    validate_schema: true
+    schema_evolution:
+      enabled: true
+      mode: auto                    # auto/manual/warn
+      on_new_column: add_nullable   # Action for new columns
+      on_removed_column: ignore     # Action for removed columns
+      on_type_change: fail          # Action for type changes
+```
+
+**Flow:**
+1. **Validation** detects drift
+2. **Evolution** generates DDL to fix it
+3. **Validation** re-runs to confirm alignment
+4. Pipeline proceeds
+
+**Example:**
+```
+[Pre-flight] Validation detected: Column 'signup_date' missing in destination
+[Evolution] Generated: ALTER TABLE users ADD COLUMN signup_date DATE NULL
+[Evolution] Applied DDL successfully
+[Validation] Re-validated: Schema now compatible
+[Engine] Starting pipeline execution...
+```
+
+### Best Practices
+
+- ✅ Enable `validate_schema: true` for production pipelines
+- ✅ Use `strict_validation: true` to treat warnings as errors
+- ✅ Commit `.conduit/schemas/` to Git for baseline tracking
+- ✅ Run `conduit validate` as CI/CD pre-deployment check
+- ✅ Combine with `schema_evolution.mode: manual` for controlled changes
+- ⚠️ Avoid disabling validation in production
+- ⚠️ Review warnings — they often indicate data quality issues
+
+### Troubleshooting
+
+| Symptom                             | Cause                                       | Solution                                       |
+|-------------------------------------|---------------------------------------------|------------------------------------------------|
+| "Destination schema not found"      | Table doesn't exist                         | Create table or enable `auto_create_table`     |
+| "Type mismatch: string → integer"   | Source has non-numeric strings              | Clean source data or adjust destination type   |
+| "Missing required column: email"    | Source missing column                       | Add column to source or remove from `required_columns` |
+| "Validation passed but load failed" | Downstream constraint (FK, unique)          | Check database logs for constraint violations  |
+| "Validation skipped"                | `validate_schema: false`                    | Enable validation in destination config        |
+
+---
+
+## Part 2: Data Quality Checks
+
+### Purpose
+
+Validates **record values** against business rules during pipeline execution:
+- Data format validation (email, phone, regex)
+- Range/boundary checks (age > 0, price < 1000)
+- Uniqueness constraints (within batch)
+- Allowed value lists (enums)
+- Custom business logic
+
+### When It Runs
+
+**During execution** (`conduit run`):
+- After reading each batch from source
+- Before writing to destination
+- Between schema validation and writes
+
+### Configuration
+
+**Define rules per resource:**
+```yaml
 resources:
-  - name: users_to_postgres
+  - name: users_to_warehouse
     source: csv_source
-    destination: pg_dest
+    destination: pg_warehouse
     query: "SELECT * FROM users"
     quality_checks:
-      - name: not_null_id
-        column: id
+      # Critical validation (stop pipeline)
+      - column: id
         check: not_null
         action: fail
-
-      - name: positive_age
-        column: age
-        check: greater_than
-        value: 0
-        action: dlq
-
-      - name: valid_email
-        column: email
+      
+      # Format validation (send to DLQ)
+      - column: email
         check: regex
-        pattern: "^[^@]+@[^@]+\\.[^@]+$"
+        pattern: "^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+$"
+        action: dlq
+      
+      # Range validation (log warning)
+      - column: age
+        check: range
+        min_value: 0
+        max_value: 120
         action: warn
+      
+      # Enum validation
+      - column: status
+        check: enum
+        allowed_values: ["active", "pending", "inactive"]
+        action: fail
+      
+      # Uniqueness (within batch)
+      - column: id
+        check: unique
+        action: dlq
 ```
 
-## Configuration Fields
-| Field     | Description                                 | Example             |
-| --------- | ------------------------------------------- | ------------------- |
-| `name`    | Unique identifier for the check             | `valid_email`       |
-| `column`  | Column to apply the check to                | `email`             |
-| `check`   | Built-in or custom check type               | `regex`, `not_null` |
-| `value`   | Check threshold (for numeric checks)        | `0`                 |
-| `pattern` | Regex pattern (for string checks)           | `"^[A-Z]+$"`        |
-| `action`  | Behavior on failure (`fail`, `warn`, `dlq`) | `fail`              |
+### Built-in Checks
 
-## Built-in Checks
+| Check       | Description                          | Parameters                  | Example                                    |
+|-------------|--------------------------------------|-----------------------------|---------------------------------------------|
+| `not_null`  | Value must not be null/empty         | None                        | `check: not_null`                          |
+| `regex`     | Value must match pattern             | `pattern` (string)          | `pattern: "^\\d{3}-\\d{4}$"`               |
+| `range`     | Value within numeric bounds          | `min_value`, `max_value`    | `min_value: 0, max_value: 100`             |
+| `unique`    | No duplicates within batch           | None                        | `check: unique`                            |
+| `enum`      | Value in allowed list                | `allowed_values` (list)     | `allowed_values: ["US", "CA", "MX"]`       |
 
-Conduit Core ships with a set of **standard checks** for common quality rules.
-| Rule           | Description                                      | Parameters   | Example                         |
-| -------------- | ------------------------------------------------ | ------------ | ------------------------------- |
-| `not_null`     | Fails if the value is null                       | —            | —                               |
-| `greater_than` | Value must be strictly greater than given number | `value`      | `greater_than: 0`               |
-| `less_than`    | Value must be strictly less than given number    | `value`      | `less_than: 100`                |
-| `between`      | Value must be within an inclusive range          | `min`, `max` | `between: [1, 10]`              |
-| `regex`        | Matches a regex pattern                          | `pattern`    | `regex: "^[A-Z]+$"`             |
-| `in_list`      | Value must be one of allowed values              | `allowed`    | `in_list: ["A","B","C"]`        |
-| `unique`       | Column must have unique values in batch          | —            | —                               |
-| `not_in_list`  | Value must *not* be in forbidden values          | `forbidden`  | `not_in_list: ["error", "n/a"]` |
-
-## Custom Checks
-
-You can register custom validation logic by subclassing ```QualityValidator``` or by defining inline lambdas.
-
-### Example: Custom Python Validator
+**Implementation (`quality.py`):**
 ```python
-# custom_validators.py
-from conduit_core.quality import register_validator
+def not_null_validator(value: Any, **kwargs) -> bool:
+    """Checks if value is not None or empty string"""
+    return value is not None and value != ''
 
-@register_validator("is_weekday")
-def is_weekday(value):
-    from datetime import datetime
-    if not value:
-        return True
-    date = datetime.strptime(value, "%Y-%m-%d")
-    return date.weekday() < 5  # Mon–Fri
+def regex_validator(value: Any, pattern: str, **kwargs) -> bool:
+    """Validates string against regex pattern"""
+    if not isinstance(value, str):
+        return False
+    return re.fullmatch(pattern, value) is not None
+
+def range_validator(value: Any, min_value: float = None, max_value: float = None, **kwargs) -> bool:
+    """Validates numeric value within bounds (inclusive)"""
+    try:
+        numeric_value = float(value)
+    except (ValueError, TypeError):
+        return False
+    
+    if min_value is not None and numeric_value < min_value:
+        return False
+    if max_value is not None and numeric_value > max_value:
+        return False
+    return True
+
+def unique_validator(value: Any, seen_values: Set[Any], **kwargs) -> Tuple[bool, bool]:
+    """Checks uniqueness within batch context"""
+    if value in seen_values:
+        return (False, False)  # Invalid, don't add
+    return (True, True)  # Valid, add to set
+
+def enum_validator(value: Any, allowed_values: List[Any], **kwargs) -> bool:
+    """Checks if value in allowed list"""
+    return value in allowed_values
 ```
 
-Then in ```ingest.yml:```
-```text
-quality_checks:
-  - name: weekday_check
-    column: signup_date
-    check: is_weekday
-    action: warn
+### Actions
+
+Determines pipeline behavior when validation fails:
+
+| Action  | Behavior                                  | Use Case                                    |
+|---------|-------------------------------------------|---------------------------------------------|
+| `fail`  | Stop pipeline immediately                 | Critical integrity rules (null IDs, FKs)    |
+| `warn`  | Log warning, continue processing          | Soft business rules (optional fields)       |
+| `dlq`   | Route to Dead Letter Queue, continue      | Recoverable errors (bad formats)            |
+
+**Action Priority:**
+If a record fails multiple checks with different actions, the **highest severity** applies:
+- `fail` > `warn` > `dlq`
+
+### Quality Validator Architecture
+
+```python
+# quality.py
+class QualityValidator:
+    """Applies validation rules to records"""
+    
+    def __init__(self, checks: List[QualityCheck]):
+        # Group checks by column for efficiency
+        self.checks_by_column: Dict[str, List[QualityCheck]] = {}
+        self._unique_keys_config: List[Tuple[str, str]] = []
+    
+    def validate_record(
+        self, 
+        record: Dict[str, Any],
+        batch_unique_sets: Dict[str, Set[Any]]
+    ) -> ValidationResult:
+        """Validate single record, return result with failures"""
+        
+    def validate_batch(
+        self, 
+        records: List[Dict[str, Any]]
+    ) -> BatchValidationResult:
+        """Validate batch, manage unique check state"""
 ```
-This modular design allows teams to share reusable validation logic across projects.
 
-## Action Behaviors
+**Flow:**
+```python
+validator = QualityValidator(quality_checks)
 
-Each check defines an action determining how the pipeline reacts when a record fails validation:
-| Action | Description                                  | Behavior                                            |
-| ------ | -------------------------------------------- | --------------------------------------------------- |
-| `fail` | Stops the pipeline immediately               | Raises `DataQualityError`                           |
-| `warn` | Logs a warning and continues                 | Visible in logs and manifest                        |
-| `dlq`  | Sends failed record to **Dead-Letter Queue** | Record logged in `/errors/<resource>_errors_*.json` |
+for batch in batches:
+    result = validator.validate_batch(batch)
+    
+    # Process valid records
+    destination.write(result.valid_records)
+    
+    # Handle invalid records
+    for invalid in result.invalid_records:
+        highest_action = determine_action(invalid.failed_checks)
+        
+        if highest_action == QualityAction.FAIL:
+            raise DataQualityError("Critical validation failed")
+        elif highest_action == QualityAction.WARN:
+            logger.warning(f"Record failed: {invalid.failed_checks}")
+        else:  # DLQ
+            error_log.add_quality_error(invalid.record, summary)
+```
 
-> **Note:**  
-> The `unique` check validates uniqueness *within each batch*.  
-> For global uniqueness across the full dataset, rely on database constraints.
+### Dead Letter Queue (DLQ)
 
-### Example DLQ output:
+Failed records saved to `./errors/` with full context:
+
 ```json
 {
-  "row_number": 5,
-  "record": {"id": null, "email": "bob@invalid"},
+  "row_number": 4501,
+  "record": {
+    "id": 123,
+    "email": "invalid-email",
+    "age": 15
+  },
   "error_type": "DataQualityError",
-  "error_message": "not_null_id failed",
-  "timestamp": "2025-10-19T18:44:12Z",
+  "error_message": "email(regex): Value 'invalid-email' does not match pattern; age(range): Value '15' out of range (min=18)",
+  "timestamp": "2025-10-31T14:23:45Z",
   "failure_type": "quality_check"
 }
 ```
-## Running Quality Checks
 
-### CLI Pre-Flight Validation
+**DLQ Files:**
+- Location: `./errors/{resource_name}_errors_{timestamp}.json`
+- Format: NDJSON (one error per line)
+- Rotation: New file per run
 
-Run quality checks on sample data without executing the pipeline:
+### Custom Validators
+
+**Register custom business logic:**
+
+```python
+# custom_validators.py
+from conduit_core.quality import QualityCheckRegistry
+
+def is_valid_sku(value: Any, **kwargs) -> bool:
+    """Validate SKU format: ABC-12345"""
+    if not isinstance(value, str):
+        return False
+    return re.match(r"^[A-Z]{3}-\d{5}$", value) is not None
+
+def is_weekday(value: Any, **kwargs) -> bool:
+    """Validate date is Monday-Friday"""
+    try:
+        from datetime import datetime
+        date = datetime.strptime(value, "%Y-%m-%d")
+        return date.weekday() < 5
+    except (ValueError, TypeError):
+        return False
+
+# Register validators
+QualityCheckRegistry.register_custom("valid_sku", is_valid_sku)
+QualityCheckRegistry.register_custom("is_weekday", is_weekday)
+```
+
+**Use in YAML:**
+```yaml
+quality_checks:
+  - column: product_code
+    check: valid_sku
+    action: fail
+  - column: order_date
+    check: is_weekday
+    action: warn
+```
+
+### CLI Integration
+
+**Dry-run validation:**
 ```bash
-conduit validate users_to_postgres --file ingest.yml
+conduit run my_resource --dry-run
 ```
+- Reads source data
+- Applies quality checks
+- Shows validation results
+- **Does not write** to destination
+
+**Pre-flight with quality sampling:**
+```bash
+conduit validate my_resource --file ingest.yml
+```
+- Samples first 100 records
+- Runs all quality checks
+- Reports failure rate
+- **Does not persist** DLQ
+
 **Output:**
-```text
- Conduit Pre-Flight Validation
-
-✓ Configuration loaded successfully
+```
+✓ Configuration valid
 ✓ Source connection (csv)
-✓ Destination connection (postgres)
-✓ Inferred schema from 100 records
-✓ All required columns present
-⚠ 2 records failed quality checks in sample
+✓ Destination connection (postgresql)
+✓ Schema inferred (8 columns)
+⚠ Quality check results (sample):
+  • email(regex): 2/100 records failed
+  • age(range): 5/100 records failed
+  • status(enum): 0/100 records failed
 ```
 
-## Full Pipeline Run
+### Best Practices
 
-Quality checks are automatically executed during normal ```conduit run``` operations.
+**Rule Design:**
+- ✅ Use `fail` for critical integrity (null IDs, broken FKs)
+- ✅ Use `warn` for soft business rules (incomplete optional data)
+- ✅ Use `dlq` for recoverable errors (bad formats, typos)
+- ✅ Combine checks: `not_null` + `regex` for mandatory formatted fields
+- ⚠️ Avoid over-validation (degrades performance)
 
-If ```action=fail```, the job will terminate with an error.
-If ```action=dlq```, failed records will be logged and excluded from the load.
+**Performance:**
+- ✅ `unique` check scopes to **batch only** (not global)
+- ✅ Use database constraints for global uniqueness
+- ✅ Regex patterns: anchor with `^...$` for performance
+- ⚠️ Complex custom validators may slow throughput
 
-## Best Practices
+**Maintenance:**
+- ✅ Group reusable validators in `custom_validators.py`
+- ✅ Version control quality rules with `ingest.yml`
+- ✅ Monitor DLQ volume over time
+- ✅ Periodically replay DLQ after fixing source issues
 
- Use ```fail``` for critical integrity rules (e.g., null IDs, broken foreign keys).
+### Troubleshooting
 
- Use ```warn``` for soft business rules (e.g., incomplete optional data).
+| Symptom                                 | Likely Cause                          | Fix                                            |
+|-----------------------------------------|---------------------------------------|------------------------------------------------|
+| All records fail numeric rule           | Type mismatch (string vs number)      | Add type coercion or adjust source             |
+| Regex never matches                     | Missing `^` and `$` anchors           | Update pattern to `^pattern$`                  |
+| DLQ file not created                    | Action not set to `dlq`               | Change `action: dlq` in config                 |
+| Pipeline exits early with error         | `action: fail` triggered              | Change to `warn` or `dlq` if non-critical      |
+| No validation logs                      | Log level too high                    | Set `LOG_LEVEL=DEBUG`                          |
+| Unique check fails unexpectedly         | Duplicate within same batch           | Expected behavior; check source data           |
+| Custom validator not found              | Not registered                        | Call `QualityCheckRegistry.register_custom()`  |
 
- Use ```dlq``` for data you might fix later (e.g., partially corrupted CSVs).
+---
 
- Group reusable rules in a ```quality.py``` module.
+## Part 3: Combined Workflows
 
- Always run ```conduit validate``` before scheduled jobs to catch schema/quality drift.
+### End-to-End Quality Assurance
 
- Combine with schema validation for complete data reliability.
+**Production Pipeline:**
+```yaml
+sources:
+  - name: api_source
+    type: csv
+    path: ./data/users.csv
+    infer_schema: true
 
-| Symptom                                 | Likely Cause                         | Fix                                    |
-| --------------------------------------- | ------------------------------------ | -------------------------------------- |
-| All rows fail a numeric rule            | Incorrect value type (string vs int) | Cast upstream or adjust rule threshold |
-| Regex rule never matches                | Missing `^` and `$` anchors          | Ensure pattern is anchored             |
-| DLQ file not created                    | `action` not set to `dlq`            | Add `action: dlq`                      |
-| CLI exits early with `DataQualityError` | `action: fail` triggered             | Change to `warn` or `dlq` if non-fatal |
-| No output in logs                       | Logging level too high               | Set `LOG_LEVEL=DEBUG`                  |
+destinations:
+  - name: warehouse
+    type: postgresql
+    table: users
+    validate_schema: true          # Schema validation
+    strict_validation: true        # Warnings = errors
+    required_columns: [id, email]
+    schema_evolution:
+      enabled: true
+      mode: manual
+      on_new_column: add_nullable
 
-## Examples
-### Example 1: Customer Data CSV → PostgreSQL
-```text
 resources:
-  - name: customers_to_pg
-    source: csv_source
-    destination: pg_dest
+  - name: users_pipeline
+    source: api_source
+    destination: warehouse
     query: "n/a"
-    quality_checks:
-      - name: id_not_null
-        column: id
+    quality_checks:                # Data quality
+      - column: id
         check: not_null
         action: fail
-      - name: valid_email
-        column: email
+      - column: email
         check: regex
-        pattern: "^[^@]+@[^@]+\\.[^@]+$"
+        pattern: "^[^@]+@[^@]+$"
+        action: fail
+      - column: age
+        check: range
+        min_value: 0
+        max_value: 120
         action: dlq
 ```
 
-## Example 2: JSON API → BigQuery with Soft Rules
-```text
-quality_checks:
-  - name: country_code
-    column: country
-    check: in_list
-    allowed: ["NO", "SE", "DK"]
-    action: warn
-  - name: positive_amount
-    column: amount
-    check: greater_than
-    value: 0
-    action: fail
+**Execution Flow:**
+```
+1. Config Validation (Pydantic)
+   ↓
+2. Pre-flight Checks
+   ├─ Source connection test
+   ├─ Destination connection test
+   ├─ Schema inference
+   ├─ Schema validation (structure)
+   └─ Quality check config validation
+   ↓
+3. Schema Evolution (if enabled)
+   ├─ Detect drift
+   ├─ Generate DDL
+   └─ Apply changes (auto) or log (manual)
+   ↓
+4. Pipeline Execution
+   ├─ Read batch
+   ├─ Apply quality checks (values)
+   ├─ Route failures (DLQ/warn/fail)
+   └─ Write valid records
+   ↓
+5. Manifest Logging
+   ├─ Schema changes applied
+   ├─ Quality failure summary
+   └─ Records processed/failed
 ```
 
-## See Also
-- [Schema Validation](schema-validation.md)
-- [Schema Evolution](schema-evolution.md)
-- [CLI Reference](cli-reference.md)
-- [README](../README.md)
+### CI/CD Integration
+
+**GitHub Actions Example:**
+```yaml
+name: Validate Pipeline
+
+on: [push, pull_request]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Install Conduit
+        run: pip install conduit-core
+      
+      - name: Schema Validation
+        run: |
+          conduit validate users_pipeline \
+            --file ingest.yml \
+            --strict
+      
+      - name: Schema Drift Check
+        run: |
+          conduit schema-compare users_pipeline \
+            --file ingest.yml
+      
+      - name: Quality Check Preview
+        run: |
+          conduit run users_pipeline \
+            --dry-run \
+            --batch-size 100
+```
+
+### Monitoring & Observability
+
+**Manifest Metadata:**
+```json
+{
+  "run_id": "550e8400-e29b-41d4-a716-446655440000",
+  "resource": "users_pipeline",
+  "status": "partial_success",
+  "preflight": {
+    "schema_validation": "passed",
+    "schema_drift": "detected",
+    "evolution_applied": false
+  },
+  "quality": {
+    "checks_applied": 4,
+    "records_failed": 47,
+    "failure_rate": 0.047,
+    "dlq_count": 47
+  },
+  "records": {
+    "read": 1000,
+    "written": 953,
+    "failed": 47
+  },
+  "duration_seconds": 23.4
+}
+```
+
+**Query Manifest:**
+```bash
+conduit manifest --status=partial_success --last=10
+```
 
 ---
-This document describes the data quality framework in Conduit Core v1.0.  
-Future versions (v1.2+) will add row-level lineage and DLQ replay capabilities.
+
+## Part 4: Examples
+
+### Example 1: E-commerce Orders
+
+**Requirements:**
+- Orders must have valid order_id, customer_id
+- Email format validation
+- Amount must be positive
+- Status must be in allowed list
+- SKU format validation (custom)
+
+```yaml
+resources:
+  - name: orders_ingestion
+    source: s3_orders
+    destination: postgres_warehouse
+    quality_checks:
+      # Critical fields
+      - column: order_id
+        check: not_null
+        action: fail
+      
+      - column: customer_id
+        check: not_null
+        action: fail
+      
+      # Format validation
+      - column: email
+        check: regex
+        pattern: "^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+$"
+        action: dlq
+      
+      # Business rules
+      - column: amount
+        check: range
+        min_value: 0
+        action: fail
+      
+      - column: status
+        check: enum
+        allowed_values: ["pending", "processing", "shipped", "delivered", "cancelled"]
+        action: fail
+      
+      # Custom validation
+      - column: sku
+        check: valid_sku
+        action: warn
+```
+
+### Example 2: User Signups with Evolution
+
+**Requirements:**
+- Handle schema changes automatically
+- Strict email validation
+- Age range enforcement
+- Duplicate detection
+
+```yaml
+destinations:
+  - name: user_warehouse
+    type: snowflake
+    table: users
+    validate_schema: true
+    strict_validation: false
+    schema_evolution:
+      enabled: true
+      mode: auto
+      on_new_column: add_nullable
+      on_removed_column: ignore
+      on_type_change: fail
+
+resources:
+  - name: user_signups
+    source: json_api
+    destination: user_warehouse
+    quality_checks:
+      - column: user_id
+        check: not_null
+        action: fail
+      
+      - column: user_id
+        check: unique
+        action: fail
+      
+      - column: email
+        check: regex
+        pattern: "^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+$"
+        action: fail
+      
+      - column: age
+        check: range
+        min_value: 13
+        max_value: 120
+        action: warn
+```
+
+**Outcome:**
+- New columns automatically added to warehouse
+- Invalid emails rejected (fail)
+- Out-of-range ages logged as warnings
+- Duplicate user_ids rejected
+
+### Example 3: Financial Transactions
+
+**Requirements:**
+- Zero tolerance for data quality issues
+- Strict schema validation
+- No automatic evolution
+
+```yaml
+destinations:
+  - name: transactions_db
+    type: postgresql
+    table: transactions
+    validate_schema: true
+    strict_validation: true
+    required_columns:
+      - transaction_id
+      - account_id
+      - amount
+      - timestamp
+    schema_evolution:
+      enabled: true
+      mode: manual  # No auto-changes
+
+resources:
+  - name: transaction_stream
+    source: kafka_source
+    destination: transactions_db
+    quality_checks:
+      - column: transaction_id
+        check: not_null
+        action: fail
+      
+      - column: transaction_id
+        check: unique
+        action: fail
+      
+      - column: amount
+        check: not_null
+        action: fail
+      
+      - column: amount
+        check: range
+        min_value: 0.01
+        action: fail
+      
+      - column: account_id
+        check: not_null
+        action: fail
+```
+
+---
+
+## Summary
+
+### When to Use What
+
+| Concern                          | Use Schema Validation            | Use Quality Checks               |
+|----------------------------------|----------------------------------|----------------------------------|
+| Column missing                   | ✅ Automatic detection           | ❌                               |
+| Type mismatch                    | ✅ Pre-flight check              | ❌                               |
+| Invalid email format             | ❌                               | ✅ `regex` check                 |
+| Negative price                   | ❌                               | ✅ `range` check                 |
+| Duplicate IDs                    | ❌                               | ✅ `unique` check (batch-level)  |
+| Null in required field           | ✅ Constraint check              | ✅ `not_null` check              |
+| Schema drift over time           | ✅ Evolution detection           | ❌                               |
+| Business rule violation          | ❌                               | ✅ Custom validator              |
+
+### Decision Matrix
+
+```
+Question: Should I use schema validation or quality checks?
+
+Does it relate to column existence/types/structure?
+  YES → Schema Validation
+  NO  → ↓
+
+Does it validate record values against rules?
+  YES → Quality Checks
+  NO  → ↓
+
+Is it a database constraint (FK, unique)?
+  YES → Schema Validation + DB constraints
+```
+
+### Key Takeaways
+
+1. **Schema Validation** runs **before** execution (pre-flight)
+2. **Quality Checks** run **during** execution (per-batch)
+3. Both systems integrate seamlessly with schema evolution
+4. DLQ enables recovery from data quality issues
+5. Manifest tracks both schema and quality metadata
+6. Custom validators extend quality framework
+7. CI/CD integration prevents bad deploys
+
+---
+
+*This comprehensive guide covers Conduit Core v1.0. Future versions will add row-level lineage, DLQ replay, and advanced anomaly detection.*
