@@ -1,13 +1,25 @@
 [project]
 name = "conduit-core"
 version = "1.0.0"
-description = "The VLC of data ingestion"
+description = "The dbt of data ingestion - declarative, reliable, and testable data pipelines"
 authors = [
     {name = "alexandro dronnen", email = "alex12060309@gmail.com"}
 ]
 license = { file = "LICENSE" }
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.9"
+keywords = ["etl", "data-ingestion", "pipeline", "dbt", "data-engineering"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
 dependencies = [
     "typer[all]>=0.19.2",
     "pyyaml>=6.0.3",
@@ -19,18 +31,25 @@ dependencies = [
     "boto3>=1.35.0",
     "psycopg2-binary>=2.9.0",
     "snowflake-connector-python>=3.0.0",
-    "google-cloud-bigquery (>=3.38.0,<4.0.0)",
-    "mysql-connector-python (>=9.5.0,<10.0.0)"
+    "google-cloud-bigquery>=3.38.0,<4.0.0",
+    "mysql-connector-python>=9.5.0,<10.0.0"
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.4.2",
-    "moto[s3]>=5.0.0"
+    "moto[s3]>=5.0.0",
+    "psutil>=7.1.2"
 ]
 
 [project.scripts]
 conduit = "conduit_core.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/alexD1990/conduit-core"
+Documentation = "https://github.com/alexD1990/conduit-core#readme"
+Repository = "https://github.com/alexD1990/conduit-core"
+Issues = "https://github.com/alexD1990/conduit-core/issues"
 
 [build-system]
 requires = ["setuptools>=65.0", "wheel"]
@@ -38,13 +57,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[dependency-groups]
-dev = [
-    "pytest (>=8.4.2,<9.0.0)",
-    "moto[s3]>=5.0.0",
-    "psutil (>=7.1.2,<8.0.0)"
-]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
