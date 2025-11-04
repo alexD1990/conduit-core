@@ -954,8 +954,19 @@ def run_resource(
                     incremental_values,
                 )
                 
+                # Save persistent checkpoint for incremental loads
+                if incremental_column and max_value_seen is not None:
+                    checkpoint_mgr.save_checkpoint(
+                        pipeline_name=resource.name,
+                        checkpoint_column=incremental_column,
+                        last_value=max_value_seen,
+                        records_processed=total_written
+                    )
+                    logger.info(f"Persistent checkpoint saved: {incremental_column}={max_value_seen}")
+                
+                # Legacy resume support (clear old-style checkpoints)
                 if source_config.resume:
-                    logger.info("Clearing checkpoint...")
+                    logger.info("Clearing legacy checkpoint...")
                     checkpoint_mgr.clear_checkpoint(resource.name)
 
             total_failed = error_log.error_count()
