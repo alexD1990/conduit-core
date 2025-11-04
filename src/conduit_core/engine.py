@@ -888,12 +888,23 @@ def run_resource(
                             if incremental_column in record:
                                 current_val = record[incremental_column]
                                 incremental_values.append(current_val)  # Track for gap detection
+                                
+                                # Coerce types for comparison
                                 try:
                                     if current_val is not None:
+                                        # Try to coerce both values to same type for comparison
+                                        if current_batch_max is not None:
+                                            # If checkpoint is int but CSV value is string, convert string to int
+                                            if isinstance(current_batch_max, int) and isinstance(current_val, str):
+                                                current_val = int(current_val)
+                                            # If checkpoint is str but current is int, keep consistent
+                                            elif isinstance(current_batch_max, str) and isinstance(current_val, int):
+                                                current_val = str(current_val)
+                                        
                                         if current_batch_max is None or current_val > current_batch_max:
                                             current_batch_max = current_val
-                                except TypeError:
-                                    logger.debug(f"Could not compare incremental value '{current_val}' with max '{current_batch_max}'.")
+                                except (TypeError, ValueError) as e:
+                                    logger.debug(f"Could not compare incremental value '{current_val}' (type={type(current_val).__name__}) with max '{current_batch_max}' (type={type(current_batch_max).__name__}): {e}")
                         max_value_seen = current_batch_max
 
                     batch_duration = time.time() - batch_start_time
