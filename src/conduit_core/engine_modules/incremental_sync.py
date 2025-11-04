@@ -41,10 +41,9 @@ def setup_incremental_sync(
             resource.incremental.initial_value
         )
     elif resource.incremental_column:
-        # Legacy support
+        # Use checkpoint system (persistent across runs)
         incremental_column = resource.incremental_column
-        current_state = load_state()
-        incremental_start_value = last_checkpoint_value if last_checkpoint_value is not None else current_state.get(resource.name)
+        incremental_start_value = last_checkpoint_value  # Already loaded by CheckpointManager
     
     max_value_seen = incremental_start_value
     final_query = resource.query
