@@ -389,12 +389,15 @@ class PostgresDestination(BaseDestination):
         if not self.accumulated_records:
             return
         # Auto-create table if needed
-        if self.config.auto_create_table and not self._table_exists():
-            if hasattr(self, '_schema') and self._schema:
-                logger.info(f"Table {self.db_schema}.{self.table} doesn't exist. Auto-creating...")
-                self._create_table_from_schema(self._schema)
+        if not self._table_exists():
+            if self.config.auto_create_table:
+                if hasattr(self, '_schema') and self._schema:
+                    logger.info(f"Table {self.db_schema}.{self.table} doesn't exist. Auto-creating...")
+                    self._create_table_from_schema(self._schema)
+                else:
+                    raise ValueError(f"Cannot auto-create table {self.db_schema}.{self.table}: schema not available. Enable schema inference in source config.")
             else:
-                raise ValueError(f"Cannot auto-create table {self.db_schema}.{self.table}: schema not available. Enable schema inference in source config.")
+                raise ValueError(f"Table {self.db_schema}.{self.table} does not exist. Set auto_create_table=true in destination config to create it automatically, or create the table manually.")
         
         conn, cursor = None, None
         try:
