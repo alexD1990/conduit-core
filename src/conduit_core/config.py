@@ -45,6 +45,7 @@ class Destination(BaseModel):
     connection_string: Optional[str] = None
     table: Optional[str] = None
     write_mode: str = "append"
+    auto_create_table: bool = False
     primary_keys: Optional[List[str]] = None
     update_strategy: str = "update_all"
     isolation_level: str = "READ COMMITTED"
