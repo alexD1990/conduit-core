@@ -337,9 +337,64 @@ class PostgresDestination(BaseDestination):
         
         return total_written
 
+    def _table_exists(self) -> bool:
+        """Check if the table exists."""
+        try:
+            conn = psycopg2.connect(self.connection_string)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = %s 
+                    AND table_name = %s
+                )
+            """, (self.db_schema, self.table))
+            exists = cursor.fetchone()[0]
+            cursor.close()
+            conn.close()
+            return exists
+        except Exception as e:
+            logger.error(f"Error checking table existence: {e}")
+            return False
+
+    def _create_table_from_schema(self, schema: List[Dict[str, Any]]) -> None:
+        """Create table from schema definition."""
+        if not schema:
+            raise ValueError("Cannot create table: schema is empty")
+        
+        # Map types
+        type_map = {
+            "string": "TEXT",
+            "integer": "INTEGER",
+            "float": "NUMERIC",
+            "boolean": "BOOLEAN",
+            "datetime": "TIMESTAMP",
+            "date": "DATE"
+        }
+        
+        columns = []
+        for col in schema:
+            col_name = col.get("name")
+            col_type = type_map.get(col.get("type", "string"), "TEXT")
+            nullable = col.get("nullable", True)
+            null_clause = "" if nullable else "NOT NULL"
+            columns.append(f"{col_name} {col_type} {null_clause}")
+        
+        create_sql = f"CREATE TABLE {self.db_schema}.{self.table} ({', '.join(columns)})"
+        
+        logger.info(f"Creating table: {self.db_schema}.{self.table}")
+        self.execute_ddl(create_sql)
+
     def finalize(self):
         if not self.accumulated_records:
             return
+        # Auto-create table if needed
+        if self.config.auto_create_table and not self._table_exists():
+            if hasattr(self, '_schema') and self._schema:
+                logger.info(f"Table {self.db_schema}.{self.table} doesn't exist. Auto-creating...")
+                self._create_table_from_schema(self._schema)
+            else:
+                raise ValueError(f"Cannot auto-create table {self.db_schema}.{self.table}: schema not available. Enable schema inference in source config.")
         
         conn, cursor = None, None
         try:

@@ -541,6 +541,10 @@ def run_resource(
             else:
                 source_iterator = source.read(final_query)
 
+            # Assign schema to destination for auto-create
+            if inferred_schema and inferred_schema.get('columns'):
+                destination._schema = inferred_schema.get('columns')
+
             # --- Pre-flight Schema Validation (Phase 3) ---
             # After: inferred_schema = SchemaInferrer.infer_schema(...)
             if destination_config.validate_schema and inferred_schema:
