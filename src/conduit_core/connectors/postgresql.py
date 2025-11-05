@@ -358,45 +358,84 @@ class PostgresDestination(BaseDestination):
             return False
 
     def _create_table_from_schema(self, schema: List[Dict[str, Any]]) -> None:
-        """Create table from schema definition."""
+        """Create table from schema definition, or add missing columns if table exists."""
         if not schema:
             raise ValueError("Cannot create table: schema is empty")
         
-        # Map types
-        type_map = {
-            "string": "TEXT",
-            "integer": "INTEGER",
-            "float": "NUMERIC",
-            "boolean": "BOOLEAN",
-            "datetime": "TIMESTAMP",
-            "date": "DATE"
-        }
+        table_exists = self._table_exists()
         
-        columns = []
-        for col in schema:
-            col_name = col.get("name")
-            col_type = type_map.get(col.get("type", "string"), "TEXT")
-            nullable = col.get("nullable", True)
-            null_clause = "" if nullable else "NOT NULL"
-            columns.append(f"{col_name} {col_type} {null_clause}")
-        
-        create_sql = f"CREATE TABLE {self.db_schema}.{self.table} ({', '.join(columns)})"
-        
-        logger.info(f"Creating table: {self.db_schema}.{self.table}")
-        self.execute_ddl(create_sql)
+        if table_exists:
+            # Table exists - check for missing columns and add them
+            existing_cols = self.get_table_schema()
+            if existing_cols:
+                # Handle both return formats from get_table_schema
+                if 'columns' in existing_cols:
+                    # Format: {"columns": [{"name": "id", ...}, ...]}
+                    existing_col_names = {col['name'].lower() for col in existing_cols['columns']}
+                else:
+                    # Format: {"id": {"type": ..., "nullable": ...}, ...}
+                    existing_col_names = {col.lower() for col in existing_cols.keys()}
+                
+                for col in schema:
+                    col_name = col.get("name").lower()
+                    if col_name not in existing_col_names:
+                        # Add missing column
+                        type_map = {
+                            "string": "TEXT",
+                            "integer": "INTEGER",
+                            "float": "NUMERIC",
+                            "boolean": "BOOLEAN",
+                            "datetime": "TIMESTAMP",
+                            "date": "DATE"
+                        }
+                        col_type = type_map.get(col.get("type", "string"), "TEXT")
+                        # Always add new columns as nullable to avoid constraint violations on existing rows
+                        # Even if the source schema says NOT NULL, we can't enforce it on existing data
+                        
+                        alter_sql = f"ALTER TABLE {self.db_schema}.{self.table} ADD COLUMN {col_name} {col_type}"
+                        logger.info(f"Adding missing column: {col_name}")
+                        self.execute_ddl(alter_sql)
+        else:
+            # Table doesn't exist - create it
+            type_map = {
+                "string": "TEXT",
+                "integer": "INTEGER",
+                "float": "NUMERIC",
+                "boolean": "BOOLEAN",
+                "datetime": "TIMESTAMP",
+                "date": "DATE"
+            }
+            
+            columns = []
+            for col in schema:
+                col_name = col.get("name")
+                col_type = type_map.get(col.get("type", "string"), "TEXT")
+                nullable = col.get("nullable", True)
+                null_clause = "" if nullable else "NOT NULL"
+                columns.append(f"{col_name} {col_type} {null_clause}")
+            
+            create_sql = f"CREATE TABLE {self.db_schema}.{self.table} ({', '.join(columns)})"
+            
+            logger.info(f"Creating table: {self.db_schema}.{self.table}")
+            self.execute_ddl(create_sql)
 
     def finalize(self):
         if not self.accumulated_records:
             return
-        # Auto-create table if needed
-        if not self._table_exists():
-            if self.config.auto_create_table:
-                if hasattr(self, '_schema') and self._schema:
+
+        # Auto-create table or add missing columns if needed
+        if self.config.auto_create_table:
+            if hasattr(self, '_schema') and self._schema:
+                if not self._table_exists():
                     logger.info(f"Table {self.db_schema}.{self.table} doesn't exist. Auto-creating...")
-                    self._create_table_from_schema(self._schema)
                 else:
-                    raise ValueError(f"Cannot auto-create table {self.db_schema}.{self.table}: schema not available. Enable schema inference in source config.")
+                    logger.debug(f"Table {self.db_schema}.{self.table} exists. Checking for missing columns...")
+                self._create_table_from_schema(self._schema)
             else:
+                if not self._table_exists():
+                    raise ValueError(f"Cannot auto-create table {self.db_schema}.{self.table}: schema not available. Enable schema inference in source config.")
+        else:
+            if not self._table_exists():
                 raise ValueError(f"Table {self.db_schema}.{self.table} does not exist. Set auto_create_table=true in destination config to create it automatically, or create the table manually.")
         
         conn, cursor = None, None
