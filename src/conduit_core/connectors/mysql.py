@@ -108,6 +108,8 @@ class MySQLDestination(BaseDestination):
     """Write data to MySQL database."""
 
     def __init__(self, config: DestinationConfig):
+        super().__init__(config)
+        self.config = config
         self.host = config.host
         self.port = config.port or 3306
         self.database = config.database
@@ -159,6 +161,14 @@ class MySQLDestination(BaseDestination):
             # Create table if not exists
             self._create_table_if_not_exists(cursor, self.accumulated_records[0])
 
+            # Handle schema evolution (removed columns)
+            if hasattr(self, 'config') and self.config:
+                from ..schema_evolution import SchemaEvolutionManager
+                self.accumulated_records = SchemaEvolutionManager.inject_nulls_for_removed_columns(
+                    self.accumulated_records,
+                    getattr(self.config, '_removed_columns', [])
+                )
+
             # Handle mode
             if self.mode == 'full_refresh':
                 logger.info(f"🗑️  TRUNCATE `{self.table}` (full_refresh mode)")
@@ -183,6 +193,48 @@ class MySQLDestination(BaseDestination):
             if self.connection and self.connection.is_connected():
                 cursor.close()
                 self.connection.close()
+
+    def execute_ddl(self, sql: str) -> None:
+        """Execute DDL statement (ALTER TABLE, etc.)."""
+        conn = mysql.connector.connect(
+            host=self.host,
+            port=self.port,
+            database=self.database,
+            user=self.user,
+            password=self.password
+        )
+        try:
+            cursor = conn.cursor()
+            cursor.execute(sql)
+            conn.commit()
+            logger.info("DDL executed successfully")
+        finally:
+            cursor.close()
+            conn.close()
+
+    def alter_table(self, alter_sql: str) -> None:
+        """Execute ALTER TABLE statement."""
+        self.execute_ddl(alter_sql)
+
+    def table_exists(self) -> bool:
+        """Check if the destination table exists."""
+        try:
+            conn = mysql.connector.connect(
+                host=self.host,
+                port=self.port,
+                database=self.database,
+                user=self.user,
+                password=self.password
+            )
+            cursor = conn.cursor()
+            cursor.execute(f"SHOW TABLES LIKE '{self.table}'")
+            result = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            return result is not None
+        except Exception as e:
+            logger.error(f"Failed to check table existence: {e}")
+            return False
 
     def _create_table_if_not_exists(self, cursor, sample_record: Dict[str, Any]):
         """Create table with schema inferred from sample record."""

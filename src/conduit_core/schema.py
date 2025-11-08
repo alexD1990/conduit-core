@@ -392,13 +392,16 @@ class TableAutoCreator:
         type_mapping = TableAutoCreator._get_type_mapping(dialect)
         sql_type = type_mapping.get(column.type, 'VARCHAR(255)')
         
-        # New columns added via ALTER should generally be nullable unless specified
-        # Our config defaults to add_nullable, respect column def if provided
-        # null_clause = '' if column.nullable else ' NOT NULL' # Keep original logic for now
-        
         # Handle dialect-specific quoting
-        quoted_table_name = f"`{table_name}`" if dialect == "bigquery" else f'"{table_name}"'
-        quoted_column_name = f"`{column.name}`" if dialect == "bigquery" else f'"{column.name}"'
+        if dialect == "mysql":
+            quoted_table_name = f'`{table_name}`'
+            quoted_column_name = f'`{column.name}`'
+        elif dialect == "bigquery":
+            quoted_table_name = f'`{table_name}`'
+            quoted_column_name = f'`{column.name}`'
+        else:  # postgresql, snowflake
+            quoted_table_name = f'"{table_name}"'
+            quoted_column_name = f'"{column.name}"'
 
         # Simplified ALTER syntax for broader compatibility initially
         # Some dialects might need `ADD COLUMN`, others just `ADD`

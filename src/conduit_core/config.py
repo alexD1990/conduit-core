@@ -147,8 +147,21 @@ class IngestConfig(BaseModel):
 def load_config(filepath: str) -> IngestConfig:
     """Load and validate ingest config from YAML file."""
     import yaml
+    import os
+    from pathlib import Path
+    from dotenv import load_dotenv
 
+    # Load .env from current directory or parent
+    env_path = Path('.env')
+    if env_path.exists():
+        load_dotenv(env_path)
+    
+    # Read YAML and expand environment variables
     with open(filepath, 'r') as f:
-        config_dict = yaml.safe_load(f)
+        raw_yaml = f.read()
+    
+    # Expand ${VAR} and $VAR syntax
+    expanded_yaml = os.path.expandvars(raw_yaml)
+    config_dict = yaml.safe_load(expanded_yaml)
 
     return IngestConfig(**config_dict)

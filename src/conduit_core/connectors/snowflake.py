@@ -22,6 +22,7 @@ class SnowflakeDestination(BaseDestination):
 
     def __init__(self, config: DestinationConfig):
         super().__init__(config)
+        self.config = config
         load_dotenv()
         
         self.account = config.account or os.getenv('SNOWFLAKE_ACCOUNT')
@@ -243,89 +244,116 @@ class SnowflakeDestination(BaseDestination):
     
 
     def finalize(self):
-        """Writes accumulated records to Snowflake."""
+        """Writes accumulated records to Snowflake, with automatic schema evolution for new columns."""
         if not self.accumulated_records:
             logger.info("No records to write to Snowflake")
             return
-        
+
         conn = None
         temp_csv_path = None
-        
+
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            
+
             columns = list(self.accumulated_records[0].keys())
             self._create_table_if_not_exists(cursor, columns)
-            
+
+            # 🔍 --- Schema evolution (auto add missing columns) ---
+            try:
+                cursor.execute(f'DESC TABLE "{self.database}"."{self.db_schema}"."{self.table}"')
+                existing_cols = {row[0].lower() for row in cursor.fetchall()}
+                incoming_cols = {c.lower() for c in columns}
+                missing_cols = incoming_cols - existing_cols
+                if missing_cols:
+                    logger.info(f"[Schema Evolution] Adding missing columns: {missing_cols}")
+                    for col in missing_cols:
+                        cursor.execute(
+                            f'ALTER TABLE "{self.database}"."{self.db_schema}"."{self.table}" '
+                            f'ADD COLUMN IF NOT EXISTS "{col.upper()}" STRING'
+                        )
+            except Exception as e:
+                logger.warning(f"Schema evolution check failed (non-fatal): {e}")
+
+            # Handle schema evolution (removed columns)
+            if hasattr(self, 'config') and self.config:
+                from ..schema_evolution import SchemaEvolutionManager
+                self.accumulated_records = SchemaEvolutionManager.inject_nulls_for_removed_columns(
+                    self.accumulated_records,
+                    getattr(self.config, '_removed_columns', [])
+                )
+
             if self.mode == 'full_refresh':
                 logger.info(f"🗑️  TRUNCATE {self.table} (full_refresh mode)")
                 cursor.execute(f'TRUNCATE TABLE IF EXISTS "{self.database}"."{self.db_schema}"."{self.table}"')
-            
+
             with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv', newline='', encoding='utf-8') as temp_csv:
                 temp_csv_path = temp_csv.name
                 writer = csv.DictWriter(temp_csv, fieldnames=columns)
                 writer.writeheader()
                 writer.writerows(self.accumulated_records)
-            
+
             logger.info(f"Writing {len(self.accumulated_records)} records to Snowflake via staged file.")
-            
+
             stage_name = f"conduit_stage_{self.table}"
             csv_filename = Path(temp_csv_path).name
-            
-            # Upload to stage
+
             cursor.execute(f"CREATE OR REPLACE TEMPORARY STAGE {stage_name}")
             cursor.execute(f"PUT file://{temp_csv_path} @{stage_name} AUTO_COMPRESS=TRUE OVERWRITE=TRUE")
-            
-            # Handle write_mode
-            if self.config.write_mode == 'truncate' or self.config.write_mode == 'replace':
+
+            if self.config.write_mode in ('truncate', 'replace'):
                 cursor.execute(f'TRUNCATE TABLE IF EXISTS "{self.database}"."{self.db_schema}"."{self.table}"')
-            
-            # Choose COPY or MERGE based on write_mode
+
             if self.config.write_mode == 'merge':
                 if not self.config.primary_keys:
                     raise ValueError("write_mode='merge' requires primary_keys configuration")
-                
-                # Create file format if not exists
+
                 cursor.execute("""
                     CREATE OR REPLACE FILE FORMAT CSV_FORMAT
                     TYPE = CSV
                     FIELD_OPTIONALLY_ENCLOSED_BY = '"'
                     SKIP_HEADER = 1
                 """)
-                
+
                 merge_sql = self._generate_snowflake_merge_sql(
                     self.table, columns, self.config.primary_keys, stage_name, csv_filename
                 )
                 cursor.execute(merge_sql)
-                result = cursor.fetchone()
                 logger.info(f"[OK] Merged records into Snowflake")
+
             else:
-                # Default: COPY INTO (append mode)
+                target_cols = ", ".join(f'"{col.upper()}"' for col in columns)
+
                 copy_command = f"""
-                    COPY INTO {self.database}.{self.db_schema}."{self.table}"
+                    COPY INTO "{self.database}"."{self.db_schema}"."{self.table}" ({target_cols})
                     FROM @{stage_name}/{csv_filename}.gz
-                    FILE_FORMAT = (TYPE = CSV FIELD_OPTIONALLY_ENCLOSED_BY = '"' SKIP_HEADER = 1)
-                    ON_ERROR = ABORT_STATEMENT
+                    FILE_FORMAT = (
+                        TYPE = CSV
+                        FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+                        SKIP_HEADER = 1
+                        ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE
+                    )
+                    ON_ERROR = CONTINUE
                 """
+
                 cursor.execute(copy_command)
                 result = cursor.fetchone()
-                
                 if result and len(result) >= 4 and result[3] == 'LOADED':
                     logger.info(f"[OK] Successfully loaded rows into Snowflake")
                 else:
-                    logger.warning(f"Snowflake COPY command did not return 'LOADED' status. Result: {result}")
-        
+                    logger.warning(f"Snowflake COPY result: {result}")
+
         except Exception as e:
             logger.error(f"Failed to write to Snowflake: {e}")
             raise ValueError(f"Snowflake write error: {e}") from e
-        
+
         finally:
             self.accumulated_records.clear()
             if conn:
                 conn.close()
             if temp_csv_path and os.path.exists(temp_csv_path):
                 os.unlink(temp_csv_path)
+
     
     def table_exists(self) -> bool:
         """Check if the destination table exists."""
@@ -337,6 +365,22 @@ class SnowflakeDestination(BaseDestination):
             return exists
         except Exception as e:
             raise ValueError(f"Failed to check table existence: {e}")
+
+    def execute_ddl(self, sql: str) -> None:
+        """Execute DDL statement."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(sql)
+            conn.commit()
+            logger.info("DDL executed successfully")
+        finally:
+            cursor.close()
+            conn.close()
+
+    def alter_table(self, alter_sql: str) -> None:
+        """Execute ALTER TABLE statement."""
+        self.execute_ddl(alter_sql)
 
     def _create_table_if_not_exists(self, cursor, columns):
         """Create table if it doesn't exist."""
