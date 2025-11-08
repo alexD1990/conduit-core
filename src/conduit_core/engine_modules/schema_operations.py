@@ -128,7 +128,7 @@ def handle_schema_evolution(
         destination_config.schema_evolution and
         destination_config.schema_evolution.enabled and
         inferred_schema and inferred_schema.get("columns") and
-        destination_config.type in ['postgres', 'snowflake', 'bigquery']
+        destination_config.type in ['postgres', 'mysql', 'snowflake', 'bigquery']
     ):
         return
     

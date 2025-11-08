@@ -22,6 +22,7 @@ class SnowflakeDestination(BaseDestination):
 
     def __init__(self, config: DestinationConfig):
         super().__init__(config)
+        self.config = config
         load_dotenv()
         
         self.account = config.account or os.getenv('SNOWFLAKE_ACCOUNT')
@@ -257,7 +258,15 @@ class SnowflakeDestination(BaseDestination):
             
             columns = list(self.accumulated_records[0].keys())
             self._create_table_if_not_exists(cursor, columns)
-            
+
+            # Handle schema evolution (removed columns)
+            if hasattr(self, 'config') and self.config:
+                from ..schema_evolution import SchemaEvolutionManager
+                self.accumulated_records = SchemaEvolutionManager.inject_nulls_for_removed_columns(
+                    self.accumulated_records,
+                    getattr(self.config, '_removed_columns', [])
+                )
+                
             if self.mode == 'full_refresh':
                 logger.info(f"🗑️  TRUNCATE {self.table} (full_refresh mode)")
                 cursor.execute(f'TRUNCATE TABLE IF EXISTS "{self.database}"."{self.db_schema}"."{self.table}"')
@@ -337,6 +346,22 @@ class SnowflakeDestination(BaseDestination):
             return exists
         except Exception as e:
             raise ValueError(f"Failed to check table existence: {e}")
+
+    def execute_ddl(self, sql: str) -> None:
+        """Execute DDL statement."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(sql)
+            conn.commit()
+            logger.info("DDL executed successfully")
+        finally:
+            cursor.close()
+            conn.close()
+
+    def alter_table(self, alter_sql: str) -> None:
+        """Execute ALTER TABLE statement."""
+        self.execute_ddl(alter_sql)
 
     def _create_table_if_not_exists(self, cursor, columns):
         """Create table if it doesn't exist."""

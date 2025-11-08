@@ -29,6 +29,7 @@ class BigQueryDestination(BaseDestination):
 
     def __init__(self, config: DestinationConfig):
         super().__init__(config)
+        self.config = config
         self.project_id = config.project
         self.dataset_id = config.dataset
         self.table_name = config.table
@@ -113,6 +114,14 @@ class BigQueryDestination(BaseDestination):
             table_exists = True
         except:
             pass
+
+         # Handle schema evolution (removed columns)
+        if hasattr(self, 'config') and self.config:
+            from ..schema_evolution import SchemaEvolutionManager
+            self.accumulated_records = SchemaEvolutionManager.inject_nulls_for_removed_columns(
+                self.accumulated_records,
+                getattr(self.config, '_removed_columns', [])
+            )
         
         job_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
@@ -148,6 +157,16 @@ class BigQueryDestination(BaseDestination):
             raise
         finally:
             self.accumulated_records.clear()
+
+    def execute_ddl(self, sql: str) -> None:
+        """Execute DDL statement."""
+        query_job = self.client.query(sql)
+        query_job.result()
+        logger.info("DDL executed successfully")
+
+    def alter_table(self, alter_sql: str) -> None:
+        """Execute ALTER TABLE statement."""
+        self.execute_ddl(alter_sql)
 
     def table_exists(self) -> bool:
         """Check if the destination table exists."""

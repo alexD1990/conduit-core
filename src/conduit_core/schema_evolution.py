@@ -147,6 +147,12 @@ class SchemaEvolutionManager:
         executed_ddl = []
         dialect = destination.config.type
 
+        # Check if table exists before attempting ALTER
+        if hasattr(destination, 'table_exists') and callable(destination.table_exists):
+            if not destination.table_exists():
+                logger.info("[EVOLUTION] Table doesn't exist yet. Skipping schema evolution - table will be created with new schema.")
+                return []
+
         if changes.added_columns:
             logger.info(f"[DEBUG] Checking: mode={config.mode}, auto_add={config.auto_add_columns}")
             if config.mode == "auto" and config.auto_add_columns:
