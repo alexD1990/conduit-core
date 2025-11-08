@@ -437,7 +437,18 @@ class PostgresDestination(BaseDestination):
         else:
             if not self._table_exists():
                 raise ValueError(f"Table {self.db_schema}.{self.table} does not exist. Set auto_create_table=true in destination config to create it automatically, or create the table manually.")
-        
+                # ------------------------------------------------------------------
+        # Handle backward schema drift (removed columns)
+        # ------------------------------------------------------------------
+        removed_cols = getattr(self, "columns_removed", [])
+        if removed_cols:
+            from ..schema_evolution import SchemaEvolutionManager
+            logger.warning(f"[EVOLUTION] Source missing columns: {removed_cols}. Injecting NULL values before insert.")
+            self.accumulated_records = SchemaEvolutionManager.inject_nulls_for_removed_columns(
+                self.accumulated_records,
+                removed_cols
+            )
+            
         conn, cursor = None, None
         try:
             conn = psycopg2.connect(self.connection_string)
