@@ -127,7 +127,12 @@ class BigQueryDestination(BaseDestination):
             source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
             autodetect=True,
             create_disposition=bigquery.CreateDisposition.CREATE_IF_NEEDED,
+            schema_update_options=[
+                bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION,
+                bigquery.SchemaUpdateOption.ALLOW_FIELD_RELAXATION,
+            ],
         )
+
         
         if self.mode == 'full_refresh':
             if table_exists:
@@ -140,13 +145,22 @@ class BigQueryDestination(BaseDestination):
             job_config.write_disposition = bigquery.WriteDisposition.WRITE_APPEND
         
         try:
+            # Normalize pyarrow Scalar → native Python types (int, str, float, etc.)
+            def _normalize_record(record):
+                return {
+                    k: (v.as_py() if hasattr(v, "as_py") else v)
+                    for k, v in record.items()
+                }
+
+            normalized_records = [_normalize_record(r) for r in self.accumulated_records]
+
             load_job = self.client.load_table_from_json(
-                self.accumulated_records,
+                normalized_records,
                 self.table_id,
                 job_config=job_config,
             )
             load_job.result()
-            
+
             if load_job.errors:
                 raise ValueError(f"BigQuery load job failed: {load_job.errors}")
             
