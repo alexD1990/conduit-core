@@ -168,13 +168,17 @@ class SchemaEvolutionManager:
                 logger.warning(f"New columns detected but auto-evolution disabled: {[c.name for c in changes.added_columns]}")
 
         if changes.removed_columns:
-            if config.on_column_removed == "fail":
-                raise SchemaEvolutionError(
-                    f"Column(s) removed from source: {[c.name for c in changes.removed_columns]}. "
-                    f"Policy: fail. Pipeline halted."
-                )
-            elif config.on_column_removed == "warn":
-                logger.warning(f"  [!] Removed: {[c.name for c in changes.removed_columns]} (destination data preserved)")
+            removed_names = [c.name for c in changes.removed_columns]
+
+            # Always warn, never block
+            logger.warning(f"[EVOLUTION] Source missing columns: {removed_names}. Inserting NULL values for removed columns.")
+            
+            # Record metadata for auditing
+            if config.track_history:
+                destination.columns_removed = removed_names  # dynamically add metadata field
+            
+            # No raise — pipeline continues
+
 
         if changes.type_changes:
             if config.on_type_change == "fail":
@@ -198,17 +202,35 @@ class SchemaEvolutionManager:
                 changes={
                     'added': [{'name': c.name, 'type': c.type, 'nullable': c.nullable} for c in changes.added_columns],
                     'removed': [{'name': c.name, 'type': c.type, 'nullable': c.nullable} for c in changes.removed_columns],
-                    'type_changes': [{'column': t.column, 'old_type': t.old_type, 'new_type': t.new_type} for t in changes.type_changes]
+                    'type_changes': [
+                        {'column': t.column, 'old_type': t.old_type, 'new_type': t.new_type}
+                        for t in changes.type_changes
+                    ],
+                    # NEW: explicit list of removed column names for quick auditing
+                    'columns_removed': [c.name for c in changes.removed_columns],
                 },
                 ddl_applied=executed_ddl,
                 old_version=old_version,
                 new_version=new_version
             )
-            
+
             print(f"  Version: {old_version} → {new_version}")
             print(f"  Audit: {audit_file}")
 
         return executed_ddl
+        
+    @staticmethod
+    def inject_nulls_for_removed_columns(records: List[Dict[str, Any]], removed_columns: List[str]) -> List[Dict[str, Any]]:
+        """Ensure all removed columns exist as None values in outgoing records."""
+        if not removed_columns:
+            return records
+        updated = []
+        for row in records:
+            for col in removed_columns:
+                if col not in row:
+                    row[col] = None
+            updated.append(row)
+        return updated
 
 
 class SchemaEvolutionError(Exception):

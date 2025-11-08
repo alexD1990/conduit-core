@@ -102,6 +102,10 @@ Requires-Dist: moto[s3]>=5.0.0; extra == "dev"
 Requires-Dist: psutil>=7.1.2; extra == "dev"
 Dynamic: license-file
 
+[![PyPI version](https://img.shields.io/pypi/v/conduit-core.svg)](https://pypi.org/project/conduit-core/)
+[![Python versions](https://img.shields.io/pypi/pyversions/conduit-core.svg)](https://pypi.org/project/conduit-core/)
+[![Downloads](https://img.shields.io/pypi/dm/conduit-core.svg)](https://pypi.org/project/conduit-core/)
+
 # Conduit Core  
 ![Python](https://img.shields.io/badge/python-3.9+-blue.svg) ![License](https://img.shields.io/badge/license-BSL%201.1-blue.svg) ![Tests](https://img.shields.io/badge/tests-22%20passing-brightgreen.svg) ![Coverage](https://img.shields.io/badge/coverage-85%25-green.svg) ![Code Style](https://img.shields.io/badge/code%20style-black-black.svg)
 
