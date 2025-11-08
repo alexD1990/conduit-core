@@ -5,6 +5,8 @@ from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from dotenv import load_dotenv
+import os
 
 from .config import load_config
 from .engine import run_resource, get_source_connector_map, get_destination_connector_map, run_preflight
@@ -12,6 +14,12 @@ from .manifest import PipelineManifest
 
 console = Console()
 app = typer.Typer(help="Conduit Core CLI")
+
+# Load .env at CLI startup
+from pathlib import Path
+env_path = Path('.env')
+if env_path.exists():
+    load_dotenv(env_path, override=False)
 
 def version_callback(value: bool):
     if value:
