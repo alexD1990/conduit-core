@@ -30,3 +30,4 @@ test_schema.json
 test_*.yml
 src/conduit_core.egg-info/PKG-INFO
 src/conduit_core.egg-info/
+directory_tree.txt
