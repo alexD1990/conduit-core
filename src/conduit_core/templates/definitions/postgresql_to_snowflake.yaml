@@ -4,33 +4,33 @@
 
 version: "1.0"
 project:
-  name: "pg_to_snowflake_pipeline"          # ⚠️ UPDATE THIS
+  name: "pg_to_snowflake_pipeline"          # UPDATE THIS
   environment: "production"
 
 sources:
   - type: "postgresql"
     name: "pg_source"
     config:
-      host: "localhost"                     # ⚠️ UPDATE THIS
+      host: "localhost"                     # UPDATE THIS
       port: 5432
-      database: "source_db"                 # ⚠️ UPDATE THIS
+      database: "source_db"                 # UPDATE THIS
       user: "${PG_USER}"                    # 🔒
       password: "${PG_PASSWORD}"            # 🔒
-      table: "source_table"                 # ⚠️ UPDATE THIS
-      incremental_key: "id"                 # 💡 Recommended
+      table: "source_table"                 # UPDATE THIS
+      incremental_key: "id"                 # Recommended
 
 destinations:
   - type: "snowflake"
     name: "snowflake_dw"
     config:
-      account: "${SNOWFLAKE_ACCOUNT}"       # ⚠️ UPDATE THIS
+      account: "${SNOWFLAKE_ACCOUNT}"       # UPDATE THIS
       user: "${SNOWFLAKE_USER}"
       password: "${SNOWFLAKE_PASSWORD}"     # 🔒
       role: "${SNOWFLAKE_ROLE:-SYSADMIN}"
       warehouse: "${SNOWFLAKE_WAREHOUSE}"
       database: "${SNOWFLAKE_DATABASE}"
       schema: "${SNOWFLAKE_SCHEMA}"
-      table: "target_table"                 # ⚠️ UPDATE THIS
+      table: "target_table"                 # UPDATE THIS
 
 pipelines:
   - name: "pg_to_snowflake_pipeline"
@@ -42,7 +42,7 @@ pipelines:
         check: "not_null"
         action: "fail"
 
-# 🚀 HOW TO USE:
+# HOW TO USE:
 # 1. Point to real Postgres + Snowflake.
 # 2. Confirm incremental key.
 # 3. Save as `pipeline.yml` and run.

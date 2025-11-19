@@ -4,43 +4,43 @@
 
 version: "1.0"
 project:
-  name: "csv_to_snowflake_pipeline"  # ⚠️ UPDATE THIS
+  name: "csv_to_snowflake_pipeline"  # UPDATE THIS
   environment: "production"
 
 sources:
   - type: "csv"
     name: "csv_source"
     config:
-      path: "./data/input.csv"        # ⚠️ UPDATE THIS
+      path: "./data/input.csv"        # UPDATE THIS
       delimiter: ","
       has_header: true
-      # 💡 Auto-detected during first run: columns, data types
+      # Auto-detected during first run: columns, data types
 
 destinations:
   - type: "snowflake"
     name: "snowflake_dw"
     config:
-      account: "${SNOWFLAKE_ACCOUNT}"        # ⚠️ UPDATE THIS
+      account: "${SNOWFLAKE_ACCOUNT}"        # UPDATE THIS
       user: "${SNOWFLAKE_USER}"
-      password: "${SNOWFLAKE_PASSWORD}"      # 🔒 Use environment variables
+      password: "${SNOWFLAKE_PASSWORD}"      # Use environment variables
       role: "${SNOWFLAKE_ROLE:-SYSADMIN}"
-      warehouse: "${SNOWFLAKE_WAREHOUSE}"    # ⚠️ UPDATE THIS
-      database: "${SNOWFLAKE_DATABASE}"      # ⚠️ UPDATE THIS
-      schema: "${SNOWFLAKE_SCHEMA}"          # ⚠️ UPDATE THIS
-      table: "TARGET_TABLE"                  # ⚠️ UPDATE THIS
+      warehouse: "${SNOWFLAKE_WAREHOUSE}"    # UPDATE THIS
+      database: "${SNOWFLAKE_DATABASE}"      # UPDATE THIS
+      schema: "${SNOWFLAKE_SCHEMA}"          # UPDATE THIS
+      table: "TARGET_TABLE"                  # UPDATE THIS
 
 pipelines:
-  - name: "csv_to_snowflake_pipeline"        # ⚠️ UPDATE THIS
+  - name: "csv_to_snowflake_pipeline"        # UPDATE THIS
     source: "csv_source"
     destination: "snowflake_dw"
     mode: "append"
     quality_checks:
-      - column: "id"                         # ✅ Suggested validation
+      - column: "id"                         # Suggested validation
         check: "not_null"
         action: "fail"
 
-# 🚀 HOW TO USE:
-# 1. Update all ⚠️ marked fields above.
+# HOW TO USE:
+# 1. Update all marked fields above.
 # 2. Export required env vars for Snowflake credentials.
 # 3. Save as `pipeline.yml`.
 # 4. Run: `conduit run pipeline.yml`.

@@ -4,15 +4,15 @@
 
 version: "1.0"
 project:
-  name: "s3_to_postgres_pipeline"           # ⚠️ UPDATE THIS
+  name: "s3_to_postgres_pipeline"           # UPDATE THIS
   environment: "production"
 
 sources:
   - type: "s3"
     name: "s3_source"
     config:
-      bucket: "YOUR_BUCKET"                 # ⚠️ UPDATE THIS
-      prefix: "path/to/files/"              # ⚠️ UPDATE THIS
+      bucket: "YOUR_BUCKET"                 # UPDATE THIS
+      prefix: "path/to/files/"              # UPDATE THIS
       aws_access_key_id: "${AWS_ACCESS_KEY_ID}"
       aws_secret_access_key: "${AWS_SECRET_ACCESS_KEY}"
 
@@ -20,12 +20,12 @@ destinations:
   - type: "postgresql"
     name: "pg_dest"
     config:
-      host: "localhost"                     # ⚠️ UPDATE THIS
+      host: "localhost"                     # UPDATE THIS
       port: 5432
-      database: "target_db"                 # ⚠️ UPDATE THIS
+      database: "target_db"                 # UPDATE THIS
       user: "${PG_USER}"
       password: "${PG_PASSWORD}"
-      table: "target_table"                 # ⚠️ UPDATE THIS
+      table: "target_table"                 # UPDATE THIS
 
 pipelines:
   - name: "s3_to_postgres_pipeline"
@@ -33,8 +33,8 @@ pipelines:
     destination: "pg_dest"
     mode: "append"
 
-# 🚀 HOW TO USE:
-# 1. Update all ⚠️ fields.
+# HOW TO USE:
+# 1. Update all fields.
 # 2. Set required environment variables for credentials.
 # 3. Save as `pipeline.yml`.
 # 4. Run: `conduit run pipeline.yml`.

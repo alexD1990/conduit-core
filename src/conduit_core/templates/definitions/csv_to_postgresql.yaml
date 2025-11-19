@@ -4,14 +4,14 @@
 
 version: "1.0"
 project:
-  name: "csv_to_postgres_pipeline"  # ⚠️ UPDATE THIS
+  name: "csv_to_postgres_pipeline"  # UPDATE THIS
   environment: "production"
 
 sources:
   - type: "csv"
     name: "csv_source"
     config:
-      path: "./data/input.csv"      # ⚠️ UPDATE THIS
+      path: "./data/input.csv"      # UPDATE THIS
       delimiter: ","
       has_header: true
 
@@ -19,12 +19,12 @@ destinations:
   - type: "postgresql"
     name: "pg_dest"
     config:
-      host: "localhost"             # ⚠️ UPDATE THIS
+      host: "localhost"             # UPDATE THIS
       port: 5432
-      database: "target_db"         # ⚠️ UPDATE THIS
+      database: "target_db"         # UPDATE THIS
       user: "${PG_USER}"            # 🔒
       password: "${PG_PASSWORD}"    # 🔒
-      table: "target_table"         # ⚠️ UPDATE THIS
+      table: "target_table"         # UPDATE THIS
 
 pipelines:
   - name: "csv_to_postgres_pipeline"
@@ -36,7 +36,7 @@ pipelines:
         check: "not_null"
         action: "fail"
 
-# 🚀 HOW TO USE:
-# 1. Update ⚠️ fields, export PG_USER/PG_PASSWORD.
+# HOW TO USE:
+# 1. Update fields, export PG_USER/PG_PASSWORD.
 # 2. Save as `pipeline.yml`.
 # 3. Run: `conduit run pipeline.yml`.

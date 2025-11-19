@@ -4,14 +4,14 @@
 
 version: "1.0"
 project:
-  name: "csv_to_bigquery_pipeline"  # ⚠️ UPDATE THIS
+  name: "csv_to_bigquery_pipeline"  # UPDATE THIS
   environment: "production"
 
 sources:
   - type: "csv"
     name: "csv_source"
     config:
-      path: "./data/input.csv"      # ⚠️ UPDATE THIS
+      path: "./data/input.csv"      # UPDATE THIS
       delimiter: ","
       has_header: true
 
@@ -19,9 +19,9 @@ destinations:
   - type: "bigquery"
     name: "bq_dw"
     config:
-      project: "${BQ_PROJECT_ID}"   # ⚠️ UPDATE THIS
-      dataset: "TARGET_DATASET"     # ⚠️ UPDATE THIS
-      table: "TARGET_TABLE"         # ⚠️ UPDATE THIS
+      project: "${BQ_PROJECT_ID}"   # UPDATE THIS
+      dataset: "TARGET_DATASET"     # UPDATE THIS
+      table: "TARGET_TABLE"         # UPDATE THIS
       credentials_json: "${BQ_SERVICE_ACCOUNT_JSON}"  # 🔒
 
 pipelines:
@@ -34,8 +34,8 @@ pipelines:
         check: "not_null"
         action: "fail"
 
-# 🚀 HOW TO USE:
-# 1. Update ⚠️ fields.
+# HOW TO USE:
+# 1. Update fields.
 # 2. Provide BigQuery credentials via env.
 # 3. Save as `pipeline.yml`.
 # 4. Run: `conduit run pipeline.yml`.

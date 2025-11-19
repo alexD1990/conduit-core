@@ -4,19 +4,19 @@
 
 version: "1.0"
 project:
-  name: "mysql_to_snowflake_pipeline"       # ⚠️ UPDATE THIS
+  name: "mysql_to_snowflake_pipeline"       # UPDATE THIS
   environment: "production"
 
 sources:
   - type: "mysql"
     name: "mysql_source"
     config:
-      host: "localhost"                     # ⚠️ UPDATE THIS
+      host: "localhost"                     # UPDATE THIS
       port: 3306
-      database: "source_db"                 # ⚠️ UPDATE THIS
+      database: "source_db"                 # UPDATE THIS
       user: "${MYSQL_USER}"
       password: "${MYSQL_PASSWORD}"
-      table: "source_table"                 # ⚠️ UPDATE THIS
+      table: "source_table"                 # UPDATE THIS
       incremental_key: "id"
 
 destinations:
@@ -30,7 +30,7 @@ destinations:
       warehouse: "${SNOWFLAKE_WAREHOUSE}"
       database: "${SNOWFLAKE_DATABASE}"
       schema: "${SNOWFLAKE_SCHEMA}"
-      table: "target_table"                 # ⚠️ UPDATE THIS
+      table: "target_table"                 # UPDATE THIS
 
 pipelines:
   - name: "mysql_to_snowflake_pipeline"
@@ -42,8 +42,8 @@ pipelines:
         check: "not_null"
         action: "fail"
 
-# 🚀 HOW TO USE:
-# 1. Update all ⚠️ fields.
+# HOW TO USE:
+# 1. Update all fields.
 # 2. Set required environment variables for credentials.
 # 3. Save as `pipeline.yml`.
 # 4. Run: `conduit run pipeline.yml`.

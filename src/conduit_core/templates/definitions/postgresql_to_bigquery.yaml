@@ -4,28 +4,28 @@
 
 version: "1.0"
 project:
-  name: "pg_to_bigquery_pipeline"           # ⚠️ UPDATE THIS
+  name: "pg_to_bigquery_pipeline"           # UPDATE THIS
   environment: "production"
 
 sources:
   - type: "postgresql"
     name: "pg_source"
     config:
-      host: "localhost"                     # ⚠️ UPDATE THIS
+      host: "localhost"                     # UPDATE THIS
       port: 5432
-      database: "source_db"                 # ⚠️ UPDATE THIS
+      database: "source_db"                 # UPDATE THIS
       user: "${PG_USER}"
       password: "${PG_PASSWORD}"
-      table: "source_table"                 # ⚠️ UPDATE THIS
+      table: "source_table"                 # UPDATE THIS
       incremental_key: "id"
 
 destinations:
   - type: "bigquery"
     name: "bq_dw"
     config:
-      project: "${BQ_PROJECT_ID}"           # ⚠️ UPDATE THIS
-      dataset: "TARGET_DATASET"             # ⚠️ UPDATE THIS
-      table: "TARGET_TABLE"                 # ⚠️ UPDATE THIS
+      project: "${BQ_PROJECT_ID}"           # UPDATE THIS
+      dataset: "TARGET_DATASET"             # UPDATE THIS
+      table: "TARGET_TABLE"                 # UPDATE THIS
       credentials_json: "${BQ_SERVICE_ACCOUNT_JSON}"
 
 pipelines:
@@ -38,7 +38,7 @@ pipelines:
         check: "not_null"
         action: "fail"
 
-# 🚀 HOW TO USE:
+# HOW TO USE:
 # 1. Wire PG + BQ config.
 # 2. Save as `pipeline.yml`.
 # 3. Run: `conduit run pipeline.yml`.
