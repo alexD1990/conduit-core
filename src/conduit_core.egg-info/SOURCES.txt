@@ -24,6 +24,8 @@ src/conduit_core.egg-info/dependency_links.txt
 src/conduit_core.egg-info/entry_points.txt
 src/conduit_core.egg-info/requires.txt
 src/conduit_core.egg-info/top_level.txt
+src/conduit_core/cli_plugins/__init__.py
+src/conduit_core/cli_plugins/template.py
 src/conduit_core/connectors/__init__.py
 src/conduit_core/connectors/base.py
 src/conduit_core/connectors/bigquery.py
@@ -44,6 +46,8 @@ src/conduit_core/engine_modules/schema_operations.py
 src/conduit_core/engine_modules/type_coercion.py
 src/conduit_core/execution/__init__.py
 src/conduit_core/execution/parallel_extraction.py
+src/conduit_core/templates/__init__.py
+src/conduit_core/templates/registry.py
 src/conduit_core/utils/__init__.py
 src/conduit_core/utils/retry.py
 tests/test_atomic_writes.py

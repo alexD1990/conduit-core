@@ -1,12 +1,9 @@
-import os
-from dotenv import load_dotenv
+# tests/conftest.py
+import pytest
+from click.testing import CliRunner
+from conduit_core.cli import app  # Typer app
 
-# Force load .env from project root even in dev mode
-ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-ENV_PATH = os.path.join(ROOT_DIR, ".env")
-
-if os.path.exists(ENV_PATH):
-    print(f"[pytest-init] Loading .env from: {ENV_PATH}")
-    load_dotenv(ENV_PATH, override=True)
-else:
-    print(f"[pytest-init] WARNING: .env not found at {ENV_PATH}")
+@pytest.fixture
+def cli_runner():
+    """Provide a reusable CLI test runner for Conduit Core."""
+    return CliRunner()
