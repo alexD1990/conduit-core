@@ -1,8 +1,8 @@
 # Python
-__pycache__/
+**__pycache__/
 *.pyc
-.venv
-venv
+.venv/
+venv/
 
 # VS Code
 .vscode/
@@ -10,24 +10,34 @@ venv
 # Hemmeligheter
 .env
 
-# Conduit Core
+# Conduit Core runtime state
 output/
 .conduit_state.json
 .conduit_state.backup.json
 
-# Test files 
-test_aws_connection.py
-test_csv_to_csv.yml
+# Root data junk (men behold data/ og tests/)
+# Ignorer kun filer i root, ikke rekursivt
+/*.csv
+/*.json
+/*.yml
+/*.yaml
 
-# log files
-manifest.jsongoogle-cloud-sdk/
+# Log / manifest
 manifest.json
-remove_emojis.py
+google-cloud-sdk/
+.checkpoints/
+.pytest_cache/
+
+# Build artefacts
 build/
 dist/
 *.backup
+*.egg-info/
+
+# Diagrams & utilities
+directory_tree.txt
+
+# Tests
 test_schema.json
 test_*.yml
-src/conduit_core.egg-info/PKG-INFO
-src/conduit_core.egg-info/
-directory_tree.txt
+test_*.py

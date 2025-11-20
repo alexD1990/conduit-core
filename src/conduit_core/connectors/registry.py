@@ -89,12 +89,16 @@ def _derive_connector_type(class_name: str, suffix: str) -> str:
 _SOURCE_CONNECTOR_MAP = None
 _DESTINATION_CONNECTOR_MAP = None
 
-
 def get_source_connector_map() -> Dict[str, Type[BaseSource]]:
     """Returns the discovered source connector map."""
     global _SOURCE_CONNECTOR_MAP
     if _SOURCE_CONNECTOR_MAP is None:
         _SOURCE_CONNECTOR_MAP, _ = discover_connectors()
+
+        # Alias: allow both "postgres" and "postgresql"
+        if "postgres" in _SOURCE_CONNECTOR_MAP:
+            _SOURCE_CONNECTOR_MAP["postgresql"] = _SOURCE_CONNECTOR_MAP["postgres"]
+
     return _SOURCE_CONNECTOR_MAP
 
 
@@ -103,4 +107,9 @@ def get_destination_connector_map() -> Dict[str, Type[BaseDestination]]:
     global _DESTINATION_CONNECTOR_MAP
     if _DESTINATION_CONNECTOR_MAP is None:
         _, _DESTINATION_CONNECTOR_MAP = discover_connectors()
+
+        # Alias: allow both "postgres" and "postgresql"
+        if "postgres" in _DESTINATION_CONNECTOR_MAP:
+            _DESTINATION_CONNECTOR_MAP["postgresql"] = _DESTINATION_CONNECTOR_MAP["postgres"]
+
     return _DESTINATION_CONNECTOR_MAP

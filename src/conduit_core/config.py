@@ -119,9 +119,9 @@ class Resource(BaseModel):
     name: str
     source: str
     destination: str
-    query: str
-    incremental_column: Optional[str] = None  # Legacy (deprecated)
-    incremental: Optional[IncrementalConfig] = None  # NEW
+    query: Optional[str] = None  # ← Made optional
+    incremental_column: Optional[str] = None
+    incremental: Optional[IncrementalConfig] = None
     mode: Optional[str] = None
     export_schema_path: Optional[str] = None
     quality_checks: Optional[List[QualityCheck]] = None

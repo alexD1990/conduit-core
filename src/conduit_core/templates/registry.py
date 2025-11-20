@@ -251,9 +251,19 @@ def get_template(name: str) -> Dict[str, Any]:
 def load_template_yaml(name: str) -> str:
     """Load YAML content from definitions/ directory."""
     _ = get_template(name)
-    yaml_file = DEFINITIONS_DIR / f"{name}.yaml"
-    if not yaml_file.is_file():
+
+    # Support both .yaml and .yml
+    yaml_file = None
+    for ext in (".yaml", ".yml"):
+        candidate = DEFINITIONS_DIR / f"{name}{ext}"
+        if candidate.is_file():
+            yaml_file = candidate
+            break
+
+    if yaml_file is None:
         raise FileNotFoundError(
-            f"YAML definition for template '{name}' not found at {yaml_file}"
+            f"YAML definition for template '{name}' not found "
+            f"(checked {name}.yaml and {name}.yml)"
         )
+
     return yaml_file.read_text(encoding="utf-8")
