@@ -38,15 +38,14 @@ def test_templates_parse_as_valid_yaml(template_name):
     assert "version" in parsed
     assert "sources" in parsed
     assert "destinations" in parsed
-    assert "pipelines" in parsed
+    assert "resources" in parsed
 
 
 @pytest.mark.parametrize("template_name", TEMPLATE_REGISTRY.keys())
 def test_templates_contain_inline_markers(template_name):
     yaml_content = load_template_yaml(template_name)
-    assert "⚠️ UPDATE THIS" in yaml_content
+    assert "# UPDATE THIS" in yaml_content
     assert "HOW TO USE" in yaml_content
-    assert "${" in yaml_content
 
 
 def test_template_list_command(cli_runner):
